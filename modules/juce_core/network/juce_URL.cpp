@@ -847,7 +847,7 @@ URL URL::withDataToUpload (const String& parameterName, const String& filename,
 //==============================================================================
 String URL::removeEscapeChars (const String& s)
 {
-    auto result = s.replaceCharacter ('+', ' ');
+    auto result = s; //We do not need to replace + as space... as pluss is a valid char in email addreses that might need to be just url encoded
 
     if (! result.containsChar ('%'))
         return result;
