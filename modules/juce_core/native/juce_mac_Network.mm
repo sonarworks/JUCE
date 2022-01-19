@@ -894,6 +894,7 @@ private:
                                                                    connectionDidSendBodyData,     "v@:@iii");
             addMethod (@selector (connectionDidFinishLoading:),    connectionDidFinishLoading,    "v@:@");
             addMethod (@selector (connection:willSendRequest:redirectResponse:), willSendRequest, "@@:@@@");
+            addMethod (@selector (connection:canAuthenticateAgainstProtectionSpace:), canAuthenticateAgainstProtectionSpace, "@@:@@");
 
             registerClass();
         }
@@ -930,6 +931,10 @@ private:
         static void connectionDidFinishLoading (id self, SEL, NSURLConnection*)
         {
             getState (self)->finishedLoading();
+        }
+        static bool canAuthenticateAgainstProtectionSpace (NSURLConnection * connection, NSURLProtectionSpace * protectionSpace)
+        {
+            return true;
         }
     };
 
