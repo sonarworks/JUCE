@@ -336,6 +336,10 @@ private:
             else
                 openHTTPConnection (uc, address, listener);
         }
+        else
+        {
+            Logger::writeToLog(String::formatted("InternetConnect(%p, %ls, %d, ...) failed with %d", sessionHandle, uc.lpszHostName, uc.nPort, GetLastError()));
+        }
     }
 
     void applyTimeout (HINTERNET sessionHandle, const DWORD option)
@@ -417,6 +421,10 @@ private:
 
             if (closed)
                 return;
+        }
+        else
+        {
+            Logger::writeToLog(String::formatted("HttpOpenRequest() failed with %d", GetLastError()));
         }
 
         closeConnection();

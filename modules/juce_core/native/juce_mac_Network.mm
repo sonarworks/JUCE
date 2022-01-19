@@ -810,6 +810,13 @@ public:
     void didFailWithError (NSError* error)
     {
         DBG (nsStringToJuce ([error description])); ignoreUnused (error);
+        std::string errorDescription;
+        if (error)
+        {
+            errorDescription = [NSString stringWithFormat:@"(error code: %@, failure reason: %@, description: %@, recovery suggestion: %@)",
+                                error.code, error.localizedFailureReason, error.localizedDescription, error.localizedRecoverySuggestion].UTF8String;
+        }
+        Logger::writeToLog(String::formatted("URLConnectionState::didFailWithError() invoked with error %p %s", error, errorDescription.empty() ? "()" : errorDescription.c_str()));
         nsUrlErrorCode = [error code];
         hasFailed = true;
         initialised = true;
