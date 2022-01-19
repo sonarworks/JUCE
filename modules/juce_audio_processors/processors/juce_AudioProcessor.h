@@ -794,6 +794,9 @@ public:
     */
     double getSampleRate() const noexcept                       { return currentSampleRate; }
 
+    virtual bool getIsDawBypass() const { return isDawBypass; }
+    virtual void setIsDawBypass(bool bIsDawBypass) { isDawBypass = bIsDawBypass; }
+
     /** Returns the current typical block size that is being used.
 
         This can be called from your processBlock() method - it's not guaranteed
@@ -1466,6 +1469,7 @@ private:
     double currentSampleRate = 0;
     int blockSize = 0, latencySamples = 0;
     bool suspended = false;
+    bool isDawBypass = false;
     std::atomic<bool> nonRealtime { false };
     ProcessingPrecision processingPrecision = singlePrecision;
     CriticalSection callbackLock, listenerLock, activeEditorLock;

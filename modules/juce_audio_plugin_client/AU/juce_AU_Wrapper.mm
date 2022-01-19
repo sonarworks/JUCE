@@ -645,6 +645,11 @@ public:
                         else
                             isBypassed = newBypass;
 
+                        if (juceFilter != nullptr)
+                        {
+                            juceFilter->setIsDawBypass((*(UInt32*) inData) != 0);
+                        }
+
                         if (! currentlyBypassed && IsInitialized()) // turning bypass off and we're initialized
                             Reset (0, 0);
                     }

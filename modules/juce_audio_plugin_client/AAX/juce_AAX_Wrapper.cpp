@@ -1456,6 +1456,8 @@ namespace AAXClasses
                         sideChainBuffer.calloc (static_cast<size_t> (maxBufferSize));
                     }
                 }
+                if (pluginInstance != nullptr)
+                    pluginInstance->setIsDawBypass(bypass);
 
                 if (bypass)
                     pluginInstance->processBlockBypassed (buffer, midiBuffer);
