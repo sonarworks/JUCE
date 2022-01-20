@@ -66,9 +66,6 @@ target_sources(Projucer PRIVATE
     Source/ComponentEditor/jucer_JucerDocument.cpp
     Source/ComponentEditor/jucer_ObjectTypes.cpp
     Source/ComponentEditor/jucer_PaintRoutine.cpp
-    Source/LiveBuildEngine/jucer_CompileEngineClient.cpp
-    Source/LiveBuildEngine/jucer_CompileEngineServer.cpp
-    Source/LiveBuildEngine/jucer_DownloadCompileEngineThread.cpp
     Source/Project/Modules/jucer_Modules.cpp
     Source/Project/UI/jucer_HeaderComponent.cpp
     Source/Project/jucer_Project.cpp
@@ -105,7 +102,6 @@ juce_add_binary_data(ProjucerData SOURCES
     Source/BinaryData/Icons/export_visualStudio.svg
     Source/BinaryData/Icons/export_xcode.svg
     Source/BinaryData/Icons/gpl_logo.svg
-    Source/BinaryData/Icons/juce-logo-with-text.svg
     Source/BinaryData/Icons/juce_icon.png
     Source/BinaryData/Icons/wizard_AnimatedApp.svg
     Source/BinaryData/Icons/wizard_AudioApp.svg
@@ -158,7 +154,8 @@ juce_add_binary_data(ProjucerData SOURCES
     ../Build/CMake/PIPComponent.cpp.in
     ../Build/CMake/PIPConsole.cpp.in
     ../Build/CMake/RecentFilesMenuTemplate.nib
-    ../Build/CMake/UnityPluginGUIScript.cs.in)
+    ../Build/CMake/UnityPluginGUIScript.cs.in
+    ../Build/CMake/juce_runtime_arch_detection.cpp)
 
 target_link_libraries(Projucer PRIVATE
     ProjucerData

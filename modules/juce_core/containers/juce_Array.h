@@ -110,16 +110,16 @@ public:
 
     /** Initalises an Array from a list of items. */
     template <typename... OtherElements>
-    Array (const ElementType& firstNewElement, OtherElements... otherElements)
+    Array (const ElementType& firstNewElement, OtherElements&&... otherElements)
     {
-        values.add (firstNewElement, otherElements...);
+        values.add (firstNewElement, std::forward<OtherElements> (otherElements)...);
     }
 
     /** Initalises an Array from a list of items. */
     template <typename... OtherElements>
-    Array (ElementType&& firstNewElement, OtherElements... otherElements)
+    Array (ElementType&& firstNewElement, OtherElements&&... otherElements)
     {
-        values.add (std::move (firstNewElement), otherElements...);
+        values.add (std::move (firstNewElement), std::forward<OtherElements> (otherElements)...);
     }
 
     template <typename TypeToCreateFrom>
@@ -433,18 +433,18 @@ public:
 
     /** Appends multiple new elements at the end of the array. */
     template <typename... OtherElements>
-    void add (const ElementType& firstNewElement, OtherElements... otherElements)
+    void add (const ElementType& firstNewElement, OtherElements&&... otherElements)
     {
         const ScopedLockType lock (getLock());
-        values.add (firstNewElement, otherElements...);
+        values.add (firstNewElement, std::forward<OtherElements> (otherElements)...);
     }
 
     /** Appends multiple new elements at the end of the array. */
     template <typename... OtherElements>
-    void add (ElementType&& firstNewElement, OtherElements... otherElements)
+    void add (ElementType&& firstNewElement, OtherElements&&... otherElements)
     {
         const ScopedLockType lock (getLock());
-        values.add (std::move (firstNewElement), otherElements...);
+        values.add (std::move (firstNewElement), std::forward<OtherElements> (otherElements)...);
     }
 
     /** Inserts a new element into the array at a given position.
@@ -1125,9 +1125,9 @@ public:
 
     //==============================================================================
    #ifndef DOXYGEN
-    // Note that the swapWithArray method has been replaced by a more flexible templated version,
-    // and renamed "swapWith" to be more consistent with the names used in other classes.
-    JUCE_DEPRECATED_WITH_BODY (void swapWithArray (Array& other) noexcept, { swapWith (other); })
+    [[deprecated ("This method has been replaced by a more flexible templated version and renamed "
+                 "to swapWith to be more consistent with the names used in other classes.")]]
+    void swapWithArray (Array& other) noexcept { swapWith (other); }
    #endif
 
 private:

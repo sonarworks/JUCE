@@ -26,16 +26,23 @@
 namespace juce
 {
 
-static bool exeIsAvailable (const char* const executable)
+static bool exeIsAvailable (String executable)
 {
     ChildProcess child;
-    const bool ok = child.start ("which " + String (executable))
-                      && child.readAllProcessOutput().trim().isNotEmpty();
 
-    child.waitForProcessToFinish (60 * 1000);
-    return ok;
+    if (child.start ("which " + executable))
+    {
+        child.waitForProcessToFinish (60 * 1000);
+        return (child.getExitCode() == 0);
+    }
+
+    return false;
 }
 
+static bool isSet (int flags, int toCheck)
+{
+    return (flags & toCheck) != 0;
+}
 
 class FileChooser::Native    : public FileChooser::Pimpl,
                                private Timer
@@ -43,10 +50,12 @@ class FileChooser::Native    : public FileChooser::Pimpl,
 public:
     Native (FileChooser& fileChooser, int flags)
         : owner (fileChooser),
-          isDirectory         ((flags & FileBrowserComponent::canSelectDirectories)   != 0),
-          isSave              ((flags & FileBrowserComponent::saveMode)               != 0),
-          selectMultipleFiles ((flags & FileBrowserComponent::canSelectMultipleItems) != 0),
-          warnAboutOverwrite  ((flags & FileBrowserComponent::warnAboutOverwriting)   != 0)
+          // kdialog/zenity only support opening either files or directories.
+          // Files should take precedence, if requested.
+          isDirectory         (isSet (flags, FileBrowserComponent::canSelectDirectories) && ! isSet (flags, FileBrowserComponent::canSelectFiles)),
+          isSave              (isSet (flags, FileBrowserComponent::saveMode)),
+          selectMultipleFiles (isSet (flags, FileBrowserComponent::canSelectMultipleItems)),
+          warnAboutOverwrite  (isSet (flags, FileBrowserComponent::warnAboutOverwriting))
     {
         const File previousWorkingDirectory (File::getCurrentWorkingDirectory());
 
@@ -64,13 +73,17 @@ public:
 
     void runModally() override
     {
+       #if JUCE_MODAL_LOOPS_PERMITTED
         child.start (args, ChildProcess::wantStdOut);
 
         while (child.isRunning())
-            if (! MessageManager::getInstance()->runDispatchLoopUntil(20))
+            if (! MessageManager::getInstance()->runDispatchLoopUntil (20))
                 break;
 
         finish (false);
+       #else
+        jassertfalse;
+       #endif
     }
 
     void launch() override
@@ -186,7 +199,7 @@ private:
         }
 
         args.add (startPath.getFullPathName());
-        args.add (owner.filters.replaceCharacter (';', ' '));
+        args.add ("(" + owner.filters.replaceCharacter (';', ' ') + ")");
     }
 
     void addZenityArgs()
@@ -208,17 +221,19 @@ private:
         }
         else
         {
-            if (isDirectory)  args.add ("--directory");
-            if (isSave)       args.add ("--save");
+            if (isSave)
+                args.add ("--save");
         }
+
+        if (isDirectory)
+            args.add ("--directory");
 
         if (owner.filters.isNotEmpty() && owner.filters != "*" && owner.filters != "*.*")
         {
             StringArray tokens;
             tokens.addTokens (owner.filters, ";,|", "\"");
 
-            for (int i = 0; i < tokens.size(); ++i)
-                args.add ("--file-filter=" + tokens[i]);
+            args.add ("--file-filter=" + tokens.joinIntoString (" "));
         }
 
         if (owner.startingFile.isDirectory())
@@ -251,9 +266,9 @@ bool FileChooser::isPlatformDialogAvailable()
    #endif
 }
 
-FileChooser::Pimpl* FileChooser::showPlatformDialog (FileChooser& owner, int flags, FilePreviewComponent*)
+std::shared_ptr<FileChooser::Pimpl> FileChooser::showPlatformDialog (FileChooser& owner, int flags, FilePreviewComponent*)
 {
-    return new Native (owner, flags);
+    return std::make_shared<Native> (owner, flags);
 }
 
 } // namespace juce

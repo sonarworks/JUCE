@@ -174,7 +174,8 @@ struct GraphEditorPanel::PinComponent   : public Component,
 //==============================================================================
 struct GraphEditorPanel::PluginComponent   : public Component,
                                              public Timer,
-                                             private AudioProcessorParameter::Listener
+                                             private AudioProcessorParameter::Listener,
+                                             private AsyncUpdater
 {
     PluginComponent (GraphEditorPanel& p, AudioProcessorGraph::NodeID id)  : panel (p), graph (p.graph), pluginID (id)
     {
@@ -338,12 +339,14 @@ struct GraphEditorPanel::PluginComponent   : public Component,
         const AudioProcessorGraph::Node::Ptr f (graph.graph.getNodeForId (pluginID));
         jassert (f != nullptr);
 
-        numIns = f->getProcessor()->getTotalNumInputChannels();
-        if (f->getProcessor()->acceptsMidi())
+        auto& processor = *f->getProcessor();
+
+        numIns = processor.getTotalNumInputChannels();
+        if (processor.acceptsMidi())
             ++numIns;
 
-        numOuts = f->getProcessor()->getTotalNumOutputChannels();
-        if (f->getProcessor()->producesMidi())
+        numOuts = processor.getTotalNumOutputChannels();
+        if (processor.producesMidi())
             ++numOuts;
 
         int w = 100;
@@ -351,14 +354,13 @@ struct GraphEditorPanel::PluginComponent   : public Component,
 
         w = jmax (w, (jmax (numIns, numOuts) + 1) * 20);
 
-        const int textWidth = font.getStringWidth (f->getProcessor()->getName());
+        const int textWidth = font.getStringWidth (processor.getName());
         w = jmax (w, 16 + jmin (textWidth, 300));
         if (textWidth > 300)
             h = 100;
 
         setSize (w, h);
-
-        setName (f->getProcessor()->getName());
+        setName (processor.getName() + formatSuffix);
 
         {
             auto p = graph.getNodePosition (pluginID);
@@ -372,16 +374,16 @@ struct GraphEditorPanel::PluginComponent   : public Component,
 
             pins.clear();
 
-            for (int i = 0; i < f->getProcessor()->getTotalNumInputChannels(); ++i)
+            for (int i = 0; i < processor.getTotalNumInputChannels(); ++i)
                 addAndMakeVisible (pins.add (new PinComponent (panel, { pluginID, i }, true)));
 
-            if (f->getProcessor()->acceptsMidi())
+            if (processor.acceptsMidi())
                 addAndMakeVisible (pins.add (new PinComponent (panel, { pluginID, AudioProcessorGraph::midiChannelIndex }, true)));
 
-            for (int i = 0; i < f->getProcessor()->getTotalNumOutputChannels(); ++i)
+            for (int i = 0; i < processor.getTotalNumOutputChannels(); ++i)
                 addAndMakeVisible (pins.add (new PinComponent (panel, { pluginID, i }, false)));
 
-            if (f->getProcessor()->producesMidi())
+            if (processor.producesMidi())
                 addAndMakeVisible (pins.add (new PinComponent (panel, { pluginID, AudioProcessorGraph::midiChannelIndex }, false)));
 
             resized();
@@ -403,21 +405,16 @@ struct GraphEditorPanel::PluginComponent   : public Component,
         menu->addItem (2, "Disconnect all pins");
         menu->addItem (3, "Toggle Bypass");
 
+        menu->addSeparator();
         if (getProcessor()->hasEditor())
-        {
-            menu->addSeparator();
             menu->addItem (10, "Show plugin GUI");
-            menu->addItem (11, "Show all programs");
-            menu->addItem (12, "Show all parameters");
-           #if JUCE_WINDOWS && JUCE_WIN_PER_MONITOR_DPI_AWARE
-            auto isTicked = false;
-            if (auto* node = graph.graph.getNodeForId (pluginID))
-                isTicked = node->properties["DPIAware"];
 
-            menu->addItem (13, "Enable DPI awareness", true, isTicked);
-           #endif
-            menu->addItem (14, "Show debug log");
-        }
+        menu->addItem (11, "Show all programs");
+        menu->addItem (12, "Show all parameters");
+        menu->addItem (13, "Show debug log");
+
+        if (autoScaleOptionAvailable)
+            addPluginAutoScaleOptionsSubMenu (dynamic_cast<AudioPluginInstance*> (getProcessor()), *menu);
 
         menu->addSeparator();
         menu->addItem (20, "Configure Audio I/O");
@@ -441,15 +438,7 @@ struct GraphEditorPanel::PluginComponent   : public Component,
             case 10:  showWindow (PluginWindow::Type::normal); break;
             case 11:  showWindow (PluginWindow::Type::programs); break;
             case 12:  showWindow (PluginWindow::Type::generic)  ; break;
-           #if JUCE_WINDOWS && JUCE_WIN_PER_MONITOR_DPI_AWARE
-            case 13:
-            {
-                if (auto* node = graph.graph.getNodeForId (pluginID))
-                    node->properties.set ("DPIAware", ! node->properties ["DPIAware"]);
-                break;
-            }
-           #endif
-            case 14:  showWindow (PluginWindow::Type::debug); break;
+            case 13:  showWindow (PluginWindow::Type::debug); break;
             case 20:  showWindow (PluginWindow::Type::audioIO); break;
             case 21:  testStateSaveLoad(); break;
 
@@ -486,10 +475,14 @@ struct GraphEditorPanel::PluginComponent   : public Component,
 
     void parameterValueChanged (int, float) override
     {
-        repaint();
+        // Parameter changes might come from the audio thread or elsewhere, but
+        // we can only call repaint from the message thread.
+        triggerAsyncUpdate();
     }
 
     void parameterGestureChanged (int, bool) override  {}
+
+    void handleAsyncUpdate() override { repaint(); }
 
     GraphEditorPanel& panel;
     PluginGraph& graph;
@@ -502,6 +495,7 @@ struct GraphEditorPanel::PluginComponent   : public Component,
     int numIns = 0, numOuts = 0;
     DropShadowEffect shadow;
     std::unique_ptr<PopupMenu> menu;
+    const String formatSuffix = getFormatSuffix (getProcessor());
 };
 
 
@@ -1157,7 +1151,7 @@ struct GraphDocumentComponent::PluginListBoxModel    : public ListBoxModel,
 GraphDocumentComponent::GraphDocumentComponent (AudioPluginFormatManager& fm,
                                                 AudioDeviceManager& dm,
                                                 KnownPluginList& kpl)
-    : graph (new PluginGraph (fm)),
+    : graph (new PluginGraph (fm, kpl)),
       deviceManager (dm),
       pluginList (kpl),
       graphPlayer (getAppProperties().getUserSettings()->getBoolValue ("doublePrecisionProcessing", false))
@@ -1189,11 +1183,8 @@ void GraphDocumentComponent::init()
 
     if (isOnTouchDevice())
     {
-        if (isOnTouchDevice())
-        {
-            titleBarComponent.reset (new TitleBarComponent (*this));
-            addAndMakeVisible (titleBarComponent.get());
-        }
+        titleBarComponent.reset (new TitleBarComponent (*this));
+        addAndMakeVisible (titleBarComponent.get());
 
         pluginListBoxModel.reset (new PluginListBoxModel (pluginListBox, pluginList));
 
@@ -1206,11 +1197,8 @@ void GraphDocumentComponent::init()
                                                                               0, 2, 0, 2,
                                                                               true, true, true, false));
 
-        if (isOnTouchDevice())
-        {
-            addAndMakeVisible (pluginListSidePanel);
-            addAndMakeVisible (mobileSettingsSidePanel);
-        }
+        addAndMakeVisible (pluginListSidePanel);
+        addAndMakeVisible (mobileSettingsSidePanel);
     }
 }
 
@@ -1226,7 +1214,16 @@ GraphDocumentComponent::~GraphDocumentComponent()
 
 void GraphDocumentComponent::resized()
 {
-    auto r = getLocalBounds();
+    auto r = [this]
+    {
+        auto bounds = getLocalBounds();
+
+        if (auto* display = Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+            return display->safeAreaInsets.subtractedFrom (bounds);
+
+        return bounds;
+    }();
+
     const int titleBarHeight = 40;
     const int keysHeight = 60;
     const int statusHeight = 20;

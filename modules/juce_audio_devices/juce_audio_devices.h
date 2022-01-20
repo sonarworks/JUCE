@@ -32,11 +32,12 @@
 
   ID:                 juce_audio_devices
   vendor:             juce
-  version:            6.0.1
+  version:            6.1.4
   name:               JUCE audio and MIDI I/O device classes
   description:        Classes to play and record from audio and MIDI I/O devices
   website:            http://www.juce.com/juce
   license:            ISC
+  minimumCppStandard: 14
 
   dependencies:       juce_audio_basics, juce_events
   OSXFrameworks:      CoreAudio CoreMIDI AudioToolbox
@@ -88,20 +89,11 @@
 #endif
 
 /** Config: JUCE_WASAPI
-    Enables WASAPI audio devices (Windows Vista and above). See also the
-    JUCE_WASAPI_EXCLUSIVE flag.
+    Enables WASAPI audio devices (Windows Vista and above).
 */
 #ifndef JUCE_WASAPI
  #define JUCE_WASAPI 1
 #endif
-
-/** Config: JUCE_WASAPI_EXCLUSIVE
-    Enables WASAPI audio devices in exclusive mode (Windows Vista and above).
-*/
-#ifndef JUCE_WASAPI_EXCLUSIVE
- #define JUCE_WASAPI_EXCLUSIVE 0
-#endif
-
 
 /** Config: JUCE_DIRECTSOUND
     Enables DirectSound audio (MS Windows only).
@@ -132,21 +124,17 @@
 #endif
 
 /** Config: JUCE_USE_ANDROID_OBOE
-    Enables Oboe devices (Android only, API 16 or above).
+    Enables Oboe devices (Android only).
 */
 #ifndef JUCE_USE_ANDROID_OBOE
  #define JUCE_USE_ANDROID_OBOE 1
-#endif
-
-#if JUCE_USE_ANDROID_OBOE && JUCE_ANDROID_API_VERSION < 16
- #undef JUCE_USE_ANDROID_OBOE
- #define JUCE_USE_ANDROID_OBOE 0
 #endif
 
 /** Config: JUCE_USE_OBOE_STABILIZED_CALLBACK
     If JUCE_USE_ANDROID_OBOE is enabled, enabling this will wrap output audio
     streams in the oboe::StabilizedCallback class. This class attempts to keep
     the CPU spinning to avoid it being scaled down on certain devices.
+    (Android only).
 */
 #ifndef JUCE_USE_ANDROID_OBOE_STABILIZED_CALLBACK
  #define JUCE_USE_ANDROID_OBOE_STABILIZED_CALLBACK 0
@@ -156,7 +144,7 @@
     Enables OpenSLES devices (Android only).
 */
 #ifndef JUCE_USE_ANDROID_OPENSLES
- #if ! JUCE_USE_ANDROID_OBOE && JUCE_ANDROID_API_VERSION >= 9
+ #if ! JUCE_USE_ANDROID_OBOE
   #define JUCE_USE_ANDROID_OPENSLES 1
  #else
   #define JUCE_USE_ANDROID_OPENSLES 0
@@ -174,6 +162,22 @@
 //==============================================================================
 #include "midi_io/juce_MidiDevices.h"
 #include "midi_io/juce_MidiMessageCollector.h"
+
+namespace juce
+{
+    /** Available modes for the WASAPI audio device.
+
+        Pass one of these to the AudioIODeviceType::createAudioIODeviceType_WASAPI()
+        method to create a WASAPI AudioIODeviceType object in this mode.
+    */
+    enum class WASAPIDeviceMode
+    {
+        shared,
+        exclusive,
+        sharedLowLatency
+    };
+}
+
 #include "audio_io/juce_AudioIODevice.h"
 #include "audio_io/juce_AudioIODeviceType.h"
 #include "audio_io/juce_SystemAudioVolume.h"

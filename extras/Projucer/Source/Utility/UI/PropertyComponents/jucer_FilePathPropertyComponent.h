@@ -34,7 +34,7 @@
 */
 class FilePathPropertyComponent    : public PropertyComponent,
                                      public FileDragAndDropTarget,
-                                     private Value::Listener
+                                     protected Value::Listener
 {
 public:
     FilePathPropertyComponent (Value valueToControl, const String& propertyName, bool isDir, bool thisOS = true,
@@ -48,8 +48,12 @@ public:
     }
 
     /** Displays a default value when no value is specified by the user. */
-    FilePathPropertyComponent (ValueWithDefault& valueToControl, const String& propertyName, bool isDir, bool thisOS = true,
-                               const String& wildcardsToUse = "*", const File& relativeRoot = File())
+    FilePathPropertyComponent (ValueTreePropertyWithDefault valueToControl,
+                               const String& propertyName,
+                               bool isDir,
+                               bool thisOS = true,
+                               const String& wildcardsToUse = "*",
+                               const File& relativeRoot = File())
        : PropertyComponent (propertyName),
          text (valueToControl, propertyName, 1024, false),
          isDirectory (isDir), isThisOS (thisOS), wildcards (wildcardsToUse), root (relativeRoot)
@@ -92,6 +96,12 @@ public:
         repaint();
     }
 
+protected:
+    void valueChanged (Value&) override
+    {
+        updateEditorColour();
+    }
+
 private:
     //==============================================================================
     void init()
@@ -128,17 +138,29 @@ private:
 
         if (isDirectory)
         {
-            FileChooser chooser ("Select directory", currentFile);
+            chooser = std::make_unique<FileChooser> ("Select directory", currentFile);
+            auto chooserFlags = FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories;
 
-            if (chooser.browseForDirectory())
-                setTo (chooser.getResult());
+            chooser->launchAsync (chooserFlags, [this] (const FileChooser& fc)
+            {
+                if (fc.getResult() == File{})
+                    return;
+
+                setTo (fc.getResult());
+            });
         }
         else
         {
-            FileChooser chooser ("Select file", currentFile, wildcards);
+            chooser = std::make_unique<FileChooser> ("Select file", currentFile, wildcards);
+            auto chooserFlags = FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles;
 
-            if (chooser.browseForFileToOpen())
-                setTo (chooser.getResult());
+            chooser->launchAsync (chooserFlags, [this] (const FileChooser& fc)
+            {
+                if (fc.getResult() == File{})
+                    return;
+
+                setTo (fc.getResult());
+            });
         }
     }
 
@@ -165,11 +187,6 @@ private:
         }
     }
 
-    void valueChanged (Value&) override
-    {
-        updateEditorColour();
-    }
-
     void lookAndFeelChanged() override
     {
         browseButton.setColour (TextButton::buttonColourId, findColour (secondaryButtonBackgroundColourId));
@@ -188,6 +205,45 @@ private:
     String wildcards;
     File root;
 
+    std::unique_ptr<FileChooser> chooser;
+
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilePathPropertyComponent)
+};
+
+//==============================================================================
+class FilePathPropertyComponentWithEnablement  : public FilePathPropertyComponent
+{
+public:
+    FilePathPropertyComponentWithEnablement (const ValueTreePropertyWithDefault& valueToControl,
+                                             ValueTreePropertyWithDefault valueToListenTo,
+                                             const String& propertyName,
+                                             bool isDir,
+                                             bool thisOS = true,
+                                             const String& wildcardsToUse = "*",
+                                             const File& relativeRoot = File())
+        : FilePathPropertyComponent (valueToControl,
+                                     propertyName,
+                                     isDir,
+                                     thisOS,
+                                     wildcardsToUse,
+                                     relativeRoot),
+          propertyWithDefault (valueToListenTo),
+          value (valueToListenTo.getPropertyAsValue())
+    {
+        value.addListener (this);
+        valueChanged (value);
+    }
+
+    ~FilePathPropertyComponentWithEnablement() override    { value.removeListener (this); }
+
+private:
+    void valueChanged (Value& v) override
+    {
+        FilePathPropertyComponent::valueChanged (v);
+        setEnabled (propertyWithDefault.get());
+    }
+
+    ValueTreePropertyWithDefault propertyWithDefault;
+    Value value;
 };

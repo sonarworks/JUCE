@@ -89,10 +89,6 @@ StringArray& StringArray::operator= (StringArray&& other) noexcept
     return *this;
 }
 
-StringArray::~StringArray()
-{
-}
-
 bool StringArray::operator== (const StringArray& other) const noexcept
 {
     return strings == other.strings;
@@ -128,6 +124,11 @@ const String& StringArray::operator[] (int index) const noexcept
 }
 
 String& StringArray::getReference (int index) noexcept
+{
+    return strings.getReference (index);
+}
+
+const String& StringArray::getReference (int index) const noexcept
 {
     return strings.getReference (index);
 }

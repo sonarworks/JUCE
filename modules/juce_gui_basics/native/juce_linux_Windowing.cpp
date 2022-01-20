@@ -31,58 +31,81 @@ static int numAlwaysOnTopPeers = 0;
 bool juce_areThereAnyAlwaysOnTopWindows()  { return numAlwaysOnTopPeers > 0; }
 
 //==============================================================================
-template<typename WindowHandleType>
-class LinuxComponentPeer  : public ComponentPeer
+class LinuxComponentPeer  : public ComponentPeer,
+                            private XWindowSystemUtilities::XSettings::Listener
 {
 public:
-    LinuxComponentPeer (Component& comp, int windowStyleFlags, WindowHandleType parentToAddTo)
+    LinuxComponentPeer (Component& comp, int windowStyleFlags, ::Window parentToAddTo)
         : ComponentPeer (comp, windowStyleFlags),
           isAlwaysOnTop (comp.isAlwaysOnTop())
     {
-        // it's dangerous to create a window on a thread other than the message thread..
+        // it's dangerous to create a window on a thread other than the message thread.
         JUCE_ASSERT_MESSAGE_MANAGER_IS_LOCKED
+
+        const auto* instance = XWindowSystem::getInstance();
+
+        if (! instance->isX11Available())
+            return;
 
         if (isAlwaysOnTop)
             ++numAlwaysOnTopPeers;
 
         repainter = std::make_unique<LinuxRepaintManager> (*this);
 
-        windowH = XWindowSystem::getInstance()->createWindow (parentToAddTo, this);
+        windowH = instance->createWindow (parentToAddTo, this);
         parentWindow = parentToAddTo;
 
         setTitle (component.getName());
+
+        if (auto* xSettings = instance->getXSettings())
+            xSettings->addListener (this);
 
         getNativeRealtimeModifiers = []() -> ModifierKeys { return XWindowSystem::getInstance()->getNativeRealtimeModifiers(); };
     }
 
     ~LinuxComponentPeer() override
     {
-        // it's dangerous to delete a window on a thread other than the message thread..
+        // it's dangerous to delete a window on a thread other than the message thread.
         JUCE_ASSERT_MESSAGE_MANAGER_IS_LOCKED
 
+        auto* instance = XWindowSystem::getInstance();
+
         repainter = nullptr;
-        XWindowSystem::getInstance()->destroyWindow (windowH);
+        instance->destroyWindow (windowH);
+
+        if (auto* xSettings = instance->getXSettings())
+            xSettings->removeListener (this);
 
         if (isAlwaysOnTop)
             --numAlwaysOnTopPeers;
     }
 
+    ::Window getWindowHandle() const noexcept
+    {
+        return windowH;
+    }
+
     //==============================================================================
     void* getNativeHandle() const override
     {
-        return (void*) windowH;
+        return reinterpret_cast<void*> (getWindowHandle());
     }
 
     //==============================================================================
     void setBounds (const Rectangle<int>& newBounds, bool isNowFullScreen) override
     {
-        bounds = newBounds.withSize (jmax (1, newBounds.getWidth()),
-                                     jmax (1, newBounds.getHeight()));
+        const auto correctedNewBounds = newBounds.withSize (jmax (1, newBounds.getWidth()),
+                                                            jmax (1, newBounds.getHeight()));
+
+        if (bounds == correctedNewBounds && fullScreen == isNowFullScreen)
+            return;
+
+        bounds = correctedNewBounds;
 
         updateScaleFactorFromNewBounds (bounds, false);
 
-        auto physicalBounds = (parentWindow == 0 ? Desktop::getInstance().getDisplays().logicalToPhysical (bounds)
-                               : bounds * currentScaleFactor);
+        auto physicalBounds = parentWindow == 0 ? Desktop::getInstance().getDisplays().logicalToPhysical (bounds)
+                                                : bounds * currentScaleFactor;
 
         WeakReference<Component> deletionChecker (&component);
 
@@ -99,13 +122,16 @@ public:
 
     Point<int> getScreenPosition (bool physical) const
     {
-        auto parentPosition = XWindowSystem::getInstance()->getParentScreenPosition();
+        auto physicalParentPosition = XWindowSystem::getInstance()->getPhysicalParentScreenPosition();
+        auto parentPosition = parentWindow == 0 ? Desktop::getInstance().getDisplays().physicalToLogical (physicalParentPosition)
+                                                : physicalParentPosition / currentScaleFactor;
 
-        auto screenBounds = (parentWindow == 0 ? bounds
-                                               : bounds.translated (parentPosition.x, parentPosition.y));
+        auto screenBounds = parentWindow == 0 ? bounds
+                                              : bounds.translated (parentPosition.x, parentPosition.y);
 
         if (physical)
-            return Desktop::getInstance().getDisplays().logicalToPhysical (screenBounds.getTopLeft());
+            return parentWindow == 0 ? Desktop::getInstance().getDisplays().logicalToPhysical (screenBounds.getTopLeft())
+                                     : screenBounds.getTopLeft() * currentScaleFactor;
 
         return screenBounds.getTopLeft();
     }
@@ -170,8 +196,14 @@ public:
 
         if (fullScreen != shouldBeFullScreen)
         {
+            const auto usingNativeTitleBar = ((styleFlags & windowHasTitleBar) != 0);
+
+            if (usingNativeTitleBar)
+                XWindowSystem::getInstance()->setMaximised (windowH, shouldBeFullScreen);
+
             if (shouldBeFullScreen)
-                r = Desktop::getInstance().getDisplays().getMainDisplay().userArea;
+                r = usingNativeTitleBar ? XWindowSystem::getInstance()->getWindowBounds (windowH, parentWindow)
+                                        : Desktop::getInstance().getDisplays().getDisplayForRect (bounds)->userArea;
 
             if (! r.isEmpty())
                 setBounds (ScalingHelpers::scaledScreenPosToUnscaled (component, r), shouldBeFullScreen);
@@ -253,12 +285,14 @@ public:
     //==============================================================================
     void repaint (const Rectangle<int>& area) override
     {
-        repainter->repaint (area.getIntersection (bounds.withZeroOrigin()));
+        if (repainter != nullptr)
+            repainter->repaint (area.getIntersection (bounds.withZeroOrigin()));
     }
 
     void performAnyPendingRepaintsNow() override
     {
-        repainter->performAnyPendingRepaintsNow();
+        if (repainter != nullptr)
+            repainter->performAnyPendingRepaintsNow();
     }
 
     void setIcon (const Image& newIcon) override
@@ -295,22 +329,34 @@ public:
     }
 
     //==============================================================================
-    WindowHandleType getParentWindow()                 { return parentWindow; }
-    void setParentWindow (WindowHandleType newParent)  { parentWindow = newParent; }
+    ::Window getParentWindow()                         { return parentWindow; }
+    void setParentWindow (::Window newParent)          { parentWindow = newParent; }
 
     //==============================================================================
+    bool isConstrainedNativeWindow() const
+    {
+        return constrainer != nullptr
+            && (styleFlags & (windowHasTitleBar | windowIsResizable)) == (windowHasTitleBar | windowIsResizable)
+            && ! isKioskMode();
+    }
+
     void updateWindowBounds()
     {
-        jassert (windowH != 0);
-        if (windowH != 0)
+        if (windowH == 0)
         {
-            auto physicalBounds = XWindowSystem::getInstance()->getWindowBounds (windowH, parentWindow);
-
-            updateScaleFactorFromNewBounds (physicalBounds, true);
-
-            bounds = (parentWindow == 0 ? Desktop::getInstance().getDisplays().physicalToLogical (physicalBounds)
-                                        : physicalBounds / currentScaleFactor);
+            jassertfalse;
+            return;
         }
+
+        if (isConstrainedNativeWindow())
+            XWindowSystem::getInstance()->updateConstraints (windowH);
+
+        auto physicalBounds = XWindowSystem::getInstance()->getWindowBounds (windowH, parentWindow);
+
+        updateScaleFactorFromNewBounds (physicalBounds, true);
+
+        bounds = parentWindow == 0 ? Desktop::getInstance().getDisplays().physicalToLogical (physicalBounds)
+                                   : physicalBounds / currentScaleFactor;
     }
 
     void updateBorderSize()
@@ -330,11 +376,17 @@ private:
     class LinuxRepaintManager   : public Timer
     {
     public:
-        LinuxRepaintManager (LinuxComponentPeer& p)  : peer (p)  {}
+        LinuxRepaintManager (LinuxComponentPeer& p)
+            : peer (p),
+              isSemiTransparentWindow ((peer.getStyleFlags() & ComponentPeer::windowIsSemiTransparent) != 0)
+        {
+        }
 
         void timerCallback() override
         {
-            if (XWindowSystem::getInstance()->getNumPaintsPending (peer.windowH) > 0)
+            XWindowSystem::getInstance()->processPendingPaintsForWindow (peer.windowH);
+
+            if (XWindowSystem::getInstance()->getNumPaintsPendingForWindow (peer.windowH) > 0)
                 return;
 
             if (! regionsNeedingRepaint.isEmpty())
@@ -359,7 +411,7 @@ private:
 
         void performAnyPendingRepaintsNow()
         {
-            if (XWindowSystem::getInstance()->getNumPaintsPending (peer.windowH) > 0)
+            if (XWindowSystem::getInstance()->getNumPaintsPendingForWindow (peer.windowH) > 0)
             {
                 startTimer (repaintTimerPeriod);
                 return;
@@ -374,7 +426,8 @@ private:
                 if (image.isNull() || image.getWidth() < totalArea.getWidth()
                      || image.getHeight() < totalArea.getHeight())
                 {
-                    image = XWindowSystem::getInstance()->createImage (totalArea.getWidth(), totalArea.getHeight(),
+                    image = XWindowSystem::getInstance()->createImage (isSemiTransparentWindow,
+                                                                       totalArea.getWidth(), totalArea.getHeight(),
                                                                        useARGBImagesForRendering);
                 }
 
@@ -407,6 +460,7 @@ private:
         enum { repaintTimerPeriod = 1000 / 100 };
 
         LinuxComponentPeer& peer;
+        const bool isSemiTransparentWindow;
         Image image;
         uint32 lastTimeImageUsed = 0;
         RectangleList<int> regionsNeedingRepaint;
@@ -417,27 +471,38 @@ private:
     };
 
     //==============================================================================
+    void settingChanged (const XWindowSystemUtilities::XSetting& settingThatHasChanged) override
+    {
+        static StringArray possibleSettings { XWindowSystem::getWindowScalingFactorSettingName(),
+                                              "Gdk/UnscaledDPI",
+                                              "Xft/DPI" };
+
+        if (possibleSettings.contains (settingThatHasChanged.name))
+            forceDisplayUpdate();
+    }
+
     void updateScaleFactorFromNewBounds (const Rectangle<int>& newBounds, bool isPhysical)
     {
-        if (! JUCEApplicationBase::isStandaloneApp())
-            return;
-
         Point<int> translation = (parentWindow != 0 ? getScreenPosition (isPhysical) : Point<int>());
+        const auto& desktop = Desktop::getInstance();
 
-        auto newScaleFactor = Desktop::getInstance().getDisplays().findDisplayForRect (newBounds.translated (translation.x, translation.y), isPhysical).scale
-                                 / Desktop::getInstance().getGlobalScaleFactor();
-
-        if (! approximatelyEqual (newScaleFactor, currentScaleFactor))
+        if (auto* display = desktop.getDisplays().getDisplayForRect (newBounds.translated (translation.x, translation.y),
+                                                                     isPhysical))
         {
-            currentScaleFactor = newScaleFactor;
-            scaleFactorListeners.call ([&] (ScaleFactorListener& l) { l.nativeScaleFactorChanged (currentScaleFactor); });
+            auto newScaleFactor = display->scale / desktop.getGlobalScaleFactor();
+
+            if (! approximatelyEqual (newScaleFactor, currentScaleFactor))
+            {
+                currentScaleFactor = newScaleFactor;
+                scaleFactorListeners.call ([&] (ScaleFactorListener& l) { l.nativeScaleFactorChanged (currentScaleFactor); });
+            }
         }
     }
 
     //==============================================================================
     std::unique_ptr<LinuxRepaintManager> repainter;
 
-    WindowHandleType windowH = {}, parentWindow = {}, keyProxy = {};
+    ::Window windowH = {}, parentWindow = {};
     Rectangle<int> bounds;
     BorderSize<int> windowBorder;
     bool fullScreen = false, isAlwaysOnTop = false;
@@ -448,17 +513,16 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LinuxComponentPeer)
 };
 
-template<typename WindowHandleType>
-bool LinuxComponentPeer<WindowHandleType>::isActiveApplication = false;
+bool LinuxComponentPeer::isActiveApplication = false;
 
 //==============================================================================
 ComponentPeer* Component::createNewPeer (int styleFlags, void* nativeWindowToAttachTo)
 {
-    return new LinuxComponentPeer<::Window> (*this, styleFlags, (::Window) nativeWindowToAttachTo);
+    return new LinuxComponentPeer (*this, styleFlags, (::Window) nativeWindowToAttachTo);
 }
 
 //==============================================================================
-JUCE_API bool JUCE_CALLTYPE Process::isForegroundProcess()    { return LinuxComponentPeer<::Window>::isActiveApplication; }
+JUCE_API bool JUCE_CALLTYPE Process::isForegroundProcess()    { return LinuxComponentPeer::isActiveApplication; }
 
 JUCE_API void JUCE_CALLTYPE Process::makeForegroundProcess()  {}
 JUCE_API void JUCE_CALLTYPE Process::hide()                   {}
@@ -467,20 +531,72 @@ JUCE_API void JUCE_CALLTYPE Process::hide()                   {}
 void Desktop::setKioskComponent (Component* comp, bool enableOrDisable, bool)
 {
     if (enableOrDisable)
-        comp->setBounds (getDisplays().findDisplayForRect (comp->getScreenBounds()).totalArea);
+        comp->setBounds (getDisplays().getDisplayForRect (comp->getScreenBounds())->totalArea);
 }
 
 void Displays::findDisplays (float masterScale)
 {
-    displays = XWindowSystem::getInstance()->findDisplays (masterScale);
+    if (XWindowSystem::getInstance()->getDisplay() != nullptr)
+    {
+        displays = XWindowSystem::getInstance()->findDisplays (masterScale);
 
-    if (! displays.isEmpty())
-        updateToLogical();
+        if (! displays.isEmpty())
+            updateToLogical();
+    }
 }
 
 bool Desktop::canUseSemiTransparentWindows() noexcept
 {
     return XWindowSystem::getInstance()->canUseSemiTransparentWindows();
+}
+
+class Desktop::NativeDarkModeChangeDetectorImpl  : private XWindowSystemUtilities::XSettings::Listener
+{
+public:
+    NativeDarkModeChangeDetectorImpl()
+    {
+        const auto* windowSystem = XWindowSystem::getInstance();
+
+        if (auto* xSettings = windowSystem->getXSettings())
+            xSettings->addListener (this);
+
+        darkModeEnabled = windowSystem->isDarkModeActive();
+    }
+
+    ~NativeDarkModeChangeDetectorImpl() override
+    {
+        if (auto* windowSystem = XWindowSystem::getInstanceWithoutCreating())
+            if (auto* xSettings = windowSystem->getXSettings())
+                xSettings->removeListener (this);
+    }
+
+    bool isDarkModeEnabled() const noexcept  { return darkModeEnabled; }
+
+private:
+    void settingChanged (const XWindowSystemUtilities::XSetting& settingThatHasChanged) override
+    {
+        if (settingThatHasChanged.name == XWindowSystem::getThemeNameSettingName())
+        {
+            const auto wasDarkModeEnabled = std::exchange (darkModeEnabled, XWindowSystem::getInstance()->isDarkModeActive());
+
+            if (darkModeEnabled != wasDarkModeEnabled)
+                Desktop::getInstance().darkModeChanged();
+        }
+    }
+
+    bool darkModeEnabled = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NativeDarkModeChangeDetectorImpl)
+};
+
+std::unique_ptr<Desktop::NativeDarkModeChangeDetectorImpl> Desktop::createNativeDarkModeChangeDetectorImpl()
+{
+    return std::make_unique<NativeDarkModeChangeDetectorImpl>();
+}
+
+bool Desktop::isDarkModeActive() const
+{
+    return nativeDarkModeChangeDetectorImpl->isDarkModeEnabled();
 }
 
 static bool screenSaverAllowed = true;
@@ -532,38 +648,58 @@ void MouseInputSource::setRawMousePosition (Point<float> newPosition)
 }
 
 //==============================================================================
-void* CustomMouseCursorInfo::create() const
+class MouseCursor::PlatformSpecificHandle
 {
-    return XWindowSystem::getInstance()->createCustomMouseCursorInfo (image, hotspot);
-}
+public:
+    explicit PlatformSpecificHandle (const MouseCursor::StandardCursorType type)
+        : cursorHandle (makeHandle (type)) {}
 
-void MouseCursor::deleteMouseCursor (void* cursorHandle, bool)
-{
-    if (cursorHandle != nullptr)
-        XWindowSystem::getInstance()->deleteMouseCursor (cursorHandle);
-}
+    explicit PlatformSpecificHandle (const CustomMouseCursorInfo& info)
+        : cursorHandle (makeHandle (info)) {}
 
-void* MouseCursor::createStandardMouseCursor (MouseCursor::StandardCursorType type)
-{
-    return XWindowSystem::getInstance()->createStandardMouseCursor (type);
-}
+    ~PlatformSpecificHandle()
+    {
+        if (cursorHandle != Cursor{})
+            XWindowSystem::getInstance()->deleteMouseCursor (cursorHandle);
+    }
 
-void MouseCursor::showInWindow (ComponentPeer* peer) const
-{
-    if (peer != nullptr)
-        XWindowSystem::getInstance()->showCursor ((::Window) peer->getNativeHandle(), getHandle());
-}
+    static void showInWindow (PlatformSpecificHandle* handle, ComponentPeer* peer)
+    {
+        const auto cursor = handle != nullptr ? handle->cursorHandle : Cursor{};
+
+        if (peer != nullptr)
+            XWindowSystem::getInstance()->showCursor ((::Window) peer->getNativeHandle(), cursor);
+    }
+
+private:
+    static Cursor makeHandle (const CustomMouseCursorInfo& info)
+    {
+        const auto image = info.image.getImage();
+        return XWindowSystem::getInstance()->createCustomMouseCursorInfo (image.rescaled ((int) (image.getWidth()  / info.image.getScale()),
+                                                                                          (int) (image.getHeight() / info.image.getScale())), info.hotspot);
+    }
+
+    static Cursor makeHandle (MouseCursor::StandardCursorType type)
+    {
+        return XWindowSystem::getInstance()->createStandardMouseCursor (type);
+    }
+
+    Cursor cursorHandle;
+
+    //==============================================================================
+    JUCE_DECLARE_NON_COPYABLE (PlatformSpecificHandle)
+    JUCE_DECLARE_NON_MOVEABLE (PlatformSpecificHandle)
+};
 
 //==============================================================================
-template<typename WindowHandleType>
-static LinuxComponentPeer<WindowHandleType>* getPeerForDragEvent (Component* sourceComp)
+static LinuxComponentPeer* getPeerForDragEvent (Component* sourceComp)
 {
     if (sourceComp == nullptr)
         if (auto* draggingSource = Desktop::getInstance().getDraggingMouseSource (0))
             sourceComp = draggingSource->getComponentUnderMouse();
 
     if (sourceComp != nullptr)
-        if (auto* lp = dynamic_cast<LinuxComponentPeer<::Window>*> (sourceComp->getPeer()))
+        if (auto* lp = dynamic_cast<LinuxComponentPeer*> (sourceComp->getPeer()))
             return lp;
 
     jassertfalse;  // This method must be called in response to a component's mouseDown or mouseDrag event!
@@ -576,7 +712,7 @@ bool DragAndDropContainer::performExternalDragDropOfFiles (const StringArray& fi
     if (files.isEmpty())
         return false;
 
-    if (auto* peer = getPeerForDragEvent<::Window> (sourceComp))
+    if (auto* peer = getPeerForDragEvent (sourceComp))
         return XWindowSystem::getInstance()->externalDragFileInit (peer, files, canMoveFiles, std::move (callback));
 
     // This method must be called in response to a component's mouseDown or mouseDrag event!
@@ -590,7 +726,7 @@ bool DragAndDropContainer::performExternalDragDropOfText (const String& text, Co
     if (text.isEmpty())
         return false;
 
-    if (auto* peer = getPeerForDragEvent<::Window> (sourceComp))
+    if (auto* peer = getPeerForDragEvent (sourceComp))
         return XWindowSystem::getInstance()->externalDragTextInit (peer, text, std::move (callback));
 
     // This method must be called in response to a component's mouseDown or mouseDrag event!
@@ -621,16 +757,86 @@ void LookAndFeel::playAlertSound()
 }
 
 //==============================================================================
+static int showDialog (const MessageBoxOptions& options,
+                       ModalComponentManager::Callback* callback,
+                       Async async)
+{
+    const auto dummyCallback = [] (int) {};
+
+    switch (options.getNumButtons())
+    {
+        case 2:
+        {
+            if (async == Async::yes && callback == nullptr)
+                callback = ModalCallbackFunction::create (dummyCallback);
+
+            return AlertWindow::showOkCancelBox (options.getIconType(),
+                                                 options.getTitle(),
+                                                 options.getMessage(),
+                                                 options.getButtonText (0),
+                                                 options.getButtonText (1),
+                                                 options.getAssociatedComponent(),
+                                                 callback) ? 1 : 0;
+        }
+
+        case 3:
+        {
+            if (async == Async::yes && callback == nullptr)
+                callback = ModalCallbackFunction::create (dummyCallback);
+
+            return AlertWindow::showYesNoCancelBox (options.getIconType(),
+                                                    options.getTitle(),
+                                                    options.getMessage(),
+                                                    options.getButtonText (0),
+                                                    options.getButtonText (1),
+                                                    options.getButtonText (2),
+                                                    options.getAssociatedComponent(),
+                                                    callback);
+        }
+
+        case 1:
+        default:
+            break;
+    }
+
+   #if JUCE_MODAL_LOOPS_PERMITTED
+    if (async == Async::no)
+    {
+        AlertWindow::showMessageBox (options.getIconType(),
+                                     options.getTitle(),
+                                     options.getMessage(),
+                                     options.getButtonText (0),
+                                     options.getAssociatedComponent());
+    }
+    else
+   #endif
+    {
+        AlertWindow::showMessageBoxAsync (options.getIconType(),
+                                          options.getTitle(),
+                                          options.getMessage(),
+                                          options.getButtonText (0),
+                                          options.getAssociatedComponent(),
+                                          callback);
+    }
+
+    return 0;
+}
+
 #if JUCE_MODAL_LOOPS_PERMITTED
-void JUCE_CALLTYPE NativeMessageBox::showMessageBox (AlertWindow::AlertIconType iconType,
+void JUCE_CALLTYPE NativeMessageBox::showMessageBox (MessageBoxIconType iconType,
                                                      const String& title, const String& message,
-                                                     Component*)
+                                                     Component* /*associatedComponent*/)
 {
     AlertWindow::showMessageBox (iconType, title, message);
 }
+
+int JUCE_CALLTYPE NativeMessageBox::show (const MessageBoxOptions& options)
+{
+    return showDialog (options, nullptr, Async::no);
+}
 #endif
 
-void JUCE_CALLTYPE NativeMessageBox::showMessageBoxAsync (AlertWindow::AlertIconType iconType,
+void JUCE_CALLTYPE NativeMessageBox::showMessageBoxAsync (MessageBoxIconType iconType,
                                                           const String& title, const String& message,
                                                           Component* associatedComponent,
                                                           ModalComponentManager::Callback* callback)
@@ -638,7 +844,7 @@ void JUCE_CALLTYPE NativeMessageBox::showMessageBoxAsync (AlertWindow::AlertIcon
     AlertWindow::showMessageBoxAsync (iconType, title, message, {}, associatedComponent, callback);
 }
 
-bool JUCE_CALLTYPE NativeMessageBox::showOkCancelBox (AlertWindow::AlertIconType iconType,
+bool JUCE_CALLTYPE NativeMessageBox::showOkCancelBox (MessageBoxIconType iconType,
                                                       const String& title, const String& message,
                                                       Component* associatedComponent,
                                                       ModalComponentManager::Callback* callback)
@@ -646,7 +852,7 @@ bool JUCE_CALLTYPE NativeMessageBox::showOkCancelBox (AlertWindow::AlertIconType
     return AlertWindow::showOkCancelBox (iconType, title, message, {}, {}, associatedComponent, callback);
 }
 
-int JUCE_CALLTYPE NativeMessageBox::showYesNoCancelBox (AlertWindow::AlertIconType iconType,
+int JUCE_CALLTYPE NativeMessageBox::showYesNoCancelBox (MessageBoxIconType iconType,
                                                         const String& title, const String& message,
                                                         Component* associatedComponent,
                                                         ModalComponentManager::Callback* callback)
@@ -655,13 +861,25 @@ int JUCE_CALLTYPE NativeMessageBox::showYesNoCancelBox (AlertWindow::AlertIconTy
                                             associatedComponent, callback);
 }
 
-int JUCE_CALLTYPE NativeMessageBox::showYesNoBox (AlertWindow::AlertIconType iconType,
+int JUCE_CALLTYPE NativeMessageBox::showYesNoBox (MessageBoxIconType iconType,
                                                   const String& title, const String& message,
                                                   Component* associatedComponent,
                                                   ModalComponentManager::Callback* callback)
 {
-    return AlertWindow::showOkCancelBox (iconType, title, message, TRANS ("Yes"), TRANS ("No"),
+    return AlertWindow::showOkCancelBox (iconType, title, message, TRANS("Yes"), TRANS("No"),
                                          associatedComponent, callback);
+}
+
+void JUCE_CALLTYPE NativeMessageBox::showAsync (const MessageBoxOptions& options,
+                                                ModalComponentManager::Callback* callback)
+{
+    showDialog (options, callback, Async::yes);
+}
+
+void JUCE_CALLTYPE NativeMessageBox::showAsync (const MessageBoxOptions& options,
+                                                std::function<void (int)> callback)
+{
+    showAsync (options, ModalCallbackFunction::create (callback));
 }
 
 //==============================================================================
@@ -672,13 +890,13 @@ Image juce_createIconForFile (const File&)
 
 void juce_LinuxAddRepaintListener (ComponentPeer* peer, Component* dummy)
 {
-    if (auto* linuxPeer = dynamic_cast<LinuxComponentPeer<::Window>*> (peer))
+    if (auto* linuxPeer = dynamic_cast<LinuxComponentPeer*> (peer))
         linuxPeer->addOpenGLRepaintListener (dummy);
 }
 
 void juce_LinuxRemoveRepaintListener (ComponentPeer* peer, Component* dummy)
 {
-    if (auto* linuxPeer = dynamic_cast<LinuxComponentPeer<::Window>*> (peer))
+    if (auto* linuxPeer = dynamic_cast<LinuxComponentPeer*> (peer))
         linuxPeer->removeOpenGLRepaintListener (dummy);
 }
 

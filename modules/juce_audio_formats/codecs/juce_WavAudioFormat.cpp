@@ -993,10 +993,12 @@ public:
                     input->skipNextBytes (2);
                     bitsPerSample = (unsigned int) (int) input->readShort();
 
-                    if (bitsPerSample > 64)
+                    if (bitsPerSample > 64 && (int) sampleRate != 0)
                     {
                         bytesPerFrame = bytesPerSec / (int) sampleRate;
-                        bitsPerSample = 8 * (unsigned int) bytesPerFrame / numChannels;
+
+                        if (numChannels != 0)
+                            bitsPerSample = 8 * (unsigned int) bytesPerFrame / numChannels;
                     }
                     else
                     {
@@ -1507,7 +1509,7 @@ private:
         usesFloatingPointData = (bitsPerSample == 32);
     }
 
-    static size_t chunkSize (const MemoryBlock& data) noexcept     { return data.getSize() > 0 ? (8 + data.getSize()) : 0; }
+    static size_t chunkSize (const MemoryBlock& data) noexcept     { return data.isEmpty() ? 0 : (8 + data.getSize()); }
 
     void writeChunkHeader (int chunkType, int size) const
     {
@@ -1517,7 +1519,7 @@ private:
 
     void writeChunk (const MemoryBlock& data, int chunkType, int size = 0) const
     {
-        if (data.getSize() > 0)
+        if (! data.isEmpty())
         {
             writeChunkHeader (chunkType, size != 0 ? size : (int) data.getSize());
             *output << data;

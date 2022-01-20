@@ -135,12 +135,14 @@ struct FFTFallback  : public FFT::Instance
 
         if (scratchSize < maxFFTScratchSpaceToAlloca)
         {
+            JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6255)
             performRealOnlyForwardTransform (static_cast<Complex<float>*> (alloca (scratchSize)), d);
+            JUCE_END_IGNORE_WARNINGS_MSVC
         }
         else
         {
             HeapBlock<char> heapSpace (scratchSize);
-            performRealOnlyForwardTransform (reinterpret_cast<Complex<float>*> (heapSpace.getData()), d);
+            performRealOnlyForwardTransform (unalignedPointerCast<Complex<float>*> (heapSpace.getData()), d);
         }
     }
 
@@ -153,12 +155,14 @@ struct FFTFallback  : public FFT::Instance
 
         if (scratchSize < maxFFTScratchSpaceToAlloca)
         {
+            JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6255)
             performRealOnlyInverseTransform (static_cast<Complex<float>*> (alloca (scratchSize)), d);
+            JUCE_END_IGNORE_WARNINGS_MSVC
         }
         else
         {
             HeapBlock<char> heapSpace (scratchSize);
-            performRealOnlyInverseTransform (reinterpret_cast<Complex<float>*> (heapSpace.getData()), d);
+            performRealOnlyInverseTransform (unalignedPointerCast<Complex<float>*> (heapSpace.getData()), d);
         }
     }
 
@@ -315,13 +319,17 @@ struct FFTFallback  : public FFT::Instance
                 default:  jassertfalse; break;
             }
 
+            JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6255)
             auto* scratch = static_cast<Complex<float>*> (alloca ((size_t) factor.radix * sizeof (Complex<float>)));
+            JUCE_END_IGNORE_WARNINGS_MSVC
 
             for (int i = 0; i < factor.length; ++i)
             {
                 for (int k = i, q1 = 0; q1 < factor.radix; ++q1)
                 {
+                    JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6386)
                     scratch[q1] = data[k];
+                    JUCE_END_IGNORE_WARNINGS_MSVC
                     k += factor.length;
                 }
 
@@ -337,7 +345,9 @@ struct FFTFallback  : public FFT::Instance
                         if (twiddleIndex >= fftSize)
                             twiddleIndex -= fftSize;
 
+                        JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6385)
                         data[k] += scratch[q] * twiddleTable[twiddleIndex];
+                        JUCE_END_IGNORE_WARNINGS_MSVC
                     }
 
                     k += factor.length;
@@ -762,7 +772,7 @@ struct IntelFFT  : public FFT::Instance
         : order (orderToUse), c2c (c2cToUse), c2r (cr2ToUse)
     {}
 
-    ~IntelFFT()
+    ~IntelFFT() override
     {
         DftiFreeDescriptor (&c2c);
         DftiFreeDescriptor (&c2r);
@@ -894,9 +904,6 @@ private:
             if (Traits::init (&specPtr, order, flag, hint, specBuf.get(), initBuf.get()) != ippStsNoErr)
                 return {};
 
-            if (reinterpret_cast<const Ipp8u*> (specPtr) != specBuf.get())
-                return {};
-
             return { std::move (specBuf), IppPtr (ippsMalloc_8u (workSize)), specPtr };
         }
 
@@ -950,7 +957,11 @@ FFT::FFT (int order)
 {
 }
 
-FFT::~FFT() {}
+FFT::FFT (FFT&&) noexcept = default;
+
+FFT& FFT::operator= (FFT&&) noexcept = default;
+
+FFT::~FFT() = default;
 
 void FFT::perform (const Complex<float>* input, Complex<float>* output, bool inverse) const noexcept
 {

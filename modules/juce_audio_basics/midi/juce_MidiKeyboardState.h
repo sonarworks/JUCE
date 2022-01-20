@@ -43,7 +43,6 @@ class JUCE_API  MidiKeyboardState
 public:
     //==============================================================================
     MidiKeyboardState();
-    ~MidiKeyboardState();
 
     //==============================================================================
     /** Resets the state of the object.
@@ -136,7 +135,7 @@ public:
 
     //==============================================================================
     /** Receives events from a MidiKeyboardState object. */
-    class Listener
+    class JUCE_API Listener
     {
     public:
         //==============================================================================

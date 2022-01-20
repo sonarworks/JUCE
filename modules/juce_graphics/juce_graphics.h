@@ -35,11 +35,12 @@
 
   ID:                 juce_graphics
   vendor:             juce
-  version:            6.0.1
+  version:            6.1.4
   name:               JUCE graphics classes
   description:        Classes for 2D vector graphics, image loading/saving, font handling, etc.
   website:            http://www.juce.com/juce
   license:            GPL/Commercial
+  minimumCppStandard: 14
 
   dependencies:       juce_events
   OSXFrameworks:      Cocoa QuartzCore
@@ -79,7 +80,7 @@
 
 /** Config: JUCE_DISABLE_COREGRAPHICS_FONT_SMOOTHING
 
-    Setting this flag will turn off CoreGraphics font smoothing, which some people
+    Setting this flag will turn off CoreGraphics font smoothing on macOS, which some people
     find makes the text too 'fat' for their taste.
 */
 #ifndef JUCE_DISABLE_COREGRAPHICS_FONT_SMOOTHING
@@ -139,6 +140,7 @@ namespace juce
 #include "contexts/juce_GraphicsContext.h"
 #include "contexts/juce_LowLevelGraphicsContext.h"
 #include "images/juce_Image.h"
+#include "images/juce_ScaledImage.h"
 #include "colour/juce_FillType.h"
 #include "native/juce_RenderingHelpers.h"
 #include "contexts/juce_LowLevelGraphicsSoftwareRenderer.h"

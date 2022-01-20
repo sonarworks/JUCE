@@ -29,10 +29,10 @@ namespace juce
 //==============================================================================
 namespace ReturnHelpers
 {
-    template<typename Type>
+    template <typename Type>
     Type returnDefaultConstructedAnyType()               { return {}; }
 
-    template<>
+    template <>
     inline void returnDefaultConstructedAnyType<void>()  {}
 }
 
@@ -49,6 +49,10 @@ public:
     bool loadAllSymbols();
 
     //==============================================================================
+    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XAllocClassHint, xAllocClassHint,
+                                         (),
+                                         XClassHint*)
+
     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XAllocSizeHints, xAllocSizeHints,
                                          (),
                                          XSizeHints*)
@@ -233,6 +237,10 @@ public:
                                          (::Display*, ::Drawable, ::Window*, int*, int*, unsigned int*, unsigned int*, unsigned int*, unsigned int*),
                                          Status)
 
+    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XGetImage, xGetImage,
+                                         (::Display*, ::Drawable, int, int, unsigned int, unsigned int, unsigned long, int),
+                                         XImage*)
+
     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XGetInputFocus, xGetInputFocus,
                                          (::Display*, ::Window*, int*),
                                          void)
@@ -405,6 +413,10 @@ public:
                                          (::Display*, ::Window, Bool, long, XEvent*),
                                          Status)
 
+    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XSetClassHint, xSetClassHint,
+                                         (::Display*, ::Window, XClassHint*),
+                                         void)
+
     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XSetErrorHandler, xSetErrorHandler,
                                          (XErrorHandler),
                                          XErrorHandler)
@@ -441,9 +453,17 @@ public:
                                          (char**, int, XTextProperty*),
                                          Status)
 
+    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (Xutf8TextListToTextProperty, xutf8TextListToTextProperty,
+                                         (::Display*, char**, int, XICCEncodingStyle, XTextProperty*),
+                                         int)
+
     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XSync, xSync,
                                          (::Display*, Bool),
                                          void)
+
+    JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XSynchronize, xSynchronize,
+                                         (::Display*, Bool),
+                                         int)
 
     JUCE_GENERATE_FUNCTION_WITH_DEFAULT (XTranslateCoordinates, xTranslateCoordinates,
                                          (::Display*, ::Window, ::Window, int, int, int*, int*, ::Window*),
@@ -567,7 +587,7 @@ public:
    #endif
 
     //==============================================================================
-    JUCE_DECLARE_SINGLETON_SINGLETHREADED_MINIMAL (X11Symbols)
+    JUCE_DECLARE_SINGLETON (X11Symbols, false)
 
 private:
     X11Symbols() = default;

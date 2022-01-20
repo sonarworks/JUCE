@@ -492,7 +492,9 @@ struct MP3Frame
         return frequencies[sampleRateIndex];
     }
 
-    void decodeHeader (const uint32 header)
+    enum class ParseSuccessful { no, yes };
+
+    ParseSuccessful decodeHeader (const uint32 header)
     {
         jassert (((header >> 10) & 3) != 3);
 
@@ -527,17 +529,18 @@ struct MP3Frame
             jassertfalse; // This means the file is using "free format". Apparently very few decoders
                           // support this mode, and this one certainly doesn't handle it correctly!
             frameSize = 0;
+            return ParseSuccessful::no;
         }
-        else
+
+        switch (layer)
         {
-            switch (layer)
-            {
-                case 1: frameSize = (((frameSizes[lsf][0][bitrateIndex] * 12000) / getFrequency() + padding) * 4) - 4; break;
-                case 2: frameSize = (frameSizes[lsf][1][bitrateIndex] * 144000)  / getFrequency() + (padding - 4); break;
-                case 3: frameSize = (bitrateIndex == 0) ? 0 : ((frameSizes[lsf][2][bitrateIndex] * 144000) / (getFrequency() << lsf) + (padding - 4)); break;
-                default: break;
-            }
+            case 1: frameSize = (((frameSizes[lsf][0][bitrateIndex] * 12000) / getFrequency() + padding) * 4) - 4; break;
+            case 2: frameSize = (frameSizes[lsf][1][bitrateIndex] * 144000)  / getFrequency() + (padding - 4); break;
+            case 3: frameSize = (bitrateIndex == 0) ? 0 : ((frameSizes[lsf][2][bitrateIndex] * 144000) / (getFrequency() << lsf) + (padding - 4)); break;
+            default: break;
         }
+
+        return ParseSuccessful::yes;
     }
 
     int layer, frameSize, numChannels, single;
@@ -1430,7 +1433,11 @@ struct MP3Stream
                 lastFrameSize += nextFrameOffset;
             }
 
-            frame.decodeHeader ((uint32) stream.readIntBigEndian());
+            const auto successful = frame.decodeHeader ((uint32) stream.readIntBigEndian());
+
+            if (successful == MP3Frame::ParseSuccessful::no)
+                return -1;
+
             headerParsed = true;
             frameSize = frame.frameSize;
             isFreeFormat = (frameSize == 0);
@@ -2402,6 +2409,7 @@ private:
         return numBits;
     }
 
+    JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6385)
     int getLayer3ScaleFactors2 (int* scf, Layer3SideInfo::Info& granule, const bool iStereo) noexcept
     {
         static const uint8 scaleTable[3][6][4] =
@@ -2453,6 +2461,7 @@ private:
 
         return numBits;
     }
+    JUCE_END_IGNORE_WARNINGS_MSVC
 
     bool layer3DequantizeSample (float xr[32][18], int* scf, Layer3SideInfo::Info& granule, int sampleRate, int part2bits) noexcept
     {
@@ -2919,7 +2928,7 @@ private:
             sum += window[12] * b0[12];  sum += window[14] * b0[14];
             *out++ = sum;
             b0 -= 16; window -= 32;
-            window += bo1 << 1;
+            window += (ptrdiff_t) bo1 << 1;
         }
 
         for (int j = 15; j != 0; --j, b0 -= 16, window -= 32)
@@ -2969,7 +2978,11 @@ public:
     bool readSamples (int** destSamples, int numDestChannels, int startOffsetInDestBuffer,
                       int64 startSampleInFile, int numSamples) override
     {
-        jassert (destSamples != nullptr);
+        if (destSamples == nullptr)
+        {
+            jassertfalse;
+            return false;
+        }
 
         if (currentPosition != startSampleInFile)
         {

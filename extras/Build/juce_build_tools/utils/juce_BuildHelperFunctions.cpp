@@ -54,31 +54,33 @@ namespace build_tools
 
     String getXcodePackageType (ProjectType::Target::Type type)
     {
+        using Type = ProjectType::Target::Type;
+
         switch (type)
         {
-            case ProjectType::Target::Type::GUIApp:
-            case ProjectType::Target::Type::StandalonePlugIn:
+            case Type::GUIApp:
+            case Type::StandalonePlugIn:
                 return "APPL";
 
-            case ProjectType::Target::Type::VSTPlugIn:
-            case ProjectType::Target::Type::VST3PlugIn:
-            case ProjectType::Target::Type::AudioUnitPlugIn:
-            case ProjectType::Target::Type::UnityPlugIn:
+            case Type::VSTPlugIn:
+            case Type::VST3PlugIn:
+            case Type::AudioUnitPlugIn:
+            case Type::UnityPlugIn:
                 return "BNDL";
 
-            case ProjectType::Target::Type::AudioUnitv3PlugIn:
+            case Type::AudioUnitv3PlugIn:
                 return "XPC!";
 
-            case ProjectType::Target::Type::AAXPlugIn:
-            case ProjectType::Target::Type::RTASPlugIn:
+            case Type::AAXPlugIn:
+            case Type::RTASPlugIn:
                 return "TDMw";
 
-            case ProjectType::Target::Type::ConsoleApp:
-            case ProjectType::Target::Type::StaticLibrary:
-            case ProjectType::Target::Type::DynamicLibrary:
-            case ProjectType::Target::Type::SharedCodeTarget:
-            case ProjectType::Target::Type::AggregateTarget:
-            case ProjectType::Target::Type::unspecified:
+            case Type::ConsoleApp:
+            case Type::StaticLibrary:
+            case Type::DynamicLibrary:
+            case Type::SharedCodeTarget:
+            case Type::AggregateTarget:
+            case Type::unspecified:
             default:
                 return {};
         }
@@ -86,27 +88,29 @@ namespace build_tools
 
     String getXcodeBundleSignature (ProjectType::Target::Type type)
     {
+        using Type = ProjectType::Target::Type;
+
         switch (type)
         {
-            case ProjectType::Target::Type::GUIApp:
-            case ProjectType::Target::Type::VSTPlugIn:
-            case ProjectType::Target::Type::VST3PlugIn:
-            case ProjectType::Target::Type::AudioUnitPlugIn:
-            case ProjectType::Target::Type::StandalonePlugIn:
-            case ProjectType::Target::Type::AudioUnitv3PlugIn:
-            case ProjectType::Target::Type::UnityPlugIn:
+            case Type::GUIApp:
+            case Type::VSTPlugIn:
+            case Type::VST3PlugIn:
+            case Type::AudioUnitPlugIn:
+            case Type::StandalonePlugIn:
+            case Type::AudioUnitv3PlugIn:
+            case Type::UnityPlugIn:
                 return "????";
 
-            case ProjectType::Target::Type::AAXPlugIn:
-            case ProjectType::Target::Type::RTASPlugIn:
+            case Type::AAXPlugIn:
+            case Type::RTASPlugIn:
                 return "PTul";
 
-            case ProjectType::Target::Type::ConsoleApp:
-            case ProjectType::Target::Type::StaticLibrary:
-            case ProjectType::Target::Type::DynamicLibrary:
-            case ProjectType::Target::Type::SharedCodeTarget:
-            case ProjectType::Target::Type::AggregateTarget:
-            case ProjectType::Target::Type::unspecified:
+            case Type::ConsoleApp:
+            case Type::StaticLibrary:
+            case Type::DynamicLibrary:
+            case Type::SharedCodeTarget:
+            case Type::AggregateTarget:
+            case Type::unspecified:
             default:
                 return {};
         }
@@ -154,7 +158,7 @@ namespace build_tools
         return v;
     }
 
-    String makeValidIdentifier (String s, bool capitalise, bool removeColons, bool allowTemplates, bool allowAsterisks)
+    String makeValidIdentifier (String s, bool makeCamelCase, bool removeColons, bool allowTemplates, bool allowAsterisks)
     {
         if (s.isEmpty())
             return "unknown";
@@ -187,12 +191,12 @@ namespace build_tools
 
         auto n = words[0];
 
-        if (capitalise)
+        if (makeCamelCase)
             n = n.toLowerCase();
 
         for (int i = 1; i < words.size(); ++i)
         {
-            if (capitalise && words[i].length() > 1)
+            if (makeCamelCase && words[i].length() > 1)
                 n << words[i].substring (0, 1).toUpperCase()
                   << words[i].substring (1).toLowerCase();
             else

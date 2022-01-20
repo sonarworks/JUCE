@@ -27,7 +27,6 @@
 #include "jucer_Project.h"
 #include "../ProjectSaving/jucer_ProjectSaver.h"
 #include "../Application/jucer_Application.h"
-#include "../LiveBuildEngine/jucer_CompileEngineSettings.h"
 
 //==============================================================================
 Project::ProjectFileModificationPoller::ProjectFileModificationPoller (Project& p)
@@ -39,22 +38,22 @@ Project::ProjectFileModificationPoller::ProjectFileModificationPoller (Project& 
 void Project::ProjectFileModificationPoller::reset()
 {
     project.removeProjectMessage (ProjectMessages::Ids::jucerFileModified);
-    showingWarning = false;
+    pending = false;
 
     startTimer (250);
 }
 
 void Project::ProjectFileModificationPoller::timerCallback()
 {
-    if (project.updateCachedFileState() && ! showingWarning)
+    if (project.updateCachedFileState() && ! pending)
     {
          project.addProjectMessage (ProjectMessages::Ids::jucerFileModified,
                                     { { "Save current state", [this] { resaveProject(); } },
-                                      { "Re-load from disk", [this] { reloadProjectFromDisk(); } },
-                                      { "Ignore", [this] { reset(); } } });
+                                      { "Re-load from disk",  [this] { reloadProjectFromDisk(); } },
+                                      { "Ignore",             [this] { reset(); } } });
 
          stopTimer();
-         showingWarning = true;
+         pending = true;
     }
 }
 
@@ -67,20 +66,30 @@ void Project::ProjectFileModificationPoller::reloadProjectFromDisk()
     {
         if (auto* mw = ProjucerApplication::getApp().mainWindowList.getMainWindowForFile (projectFile))
         {
-            mw->closeCurrentProject (OpenDocumentManager::SaveIfNeeded::no);
-            mw->openFile (projectFile);
+            Component::SafePointer<MainWindow> parent { mw };
+            mw->closeCurrentProject (OpenDocumentManager::SaveIfNeeded::no, [parent, oldTemporaryDirectory, projectFile] (bool)
+            {
+                if (parent == nullptr)
+                    return;
 
-            if (oldTemporaryDirectory != File())
-                if (auto* newProject = mw->getProject())
-                    newProject->setTemporaryDirectory (oldTemporaryDirectory);
+                parent->openFile (projectFile, [parent, oldTemporaryDirectory] (bool openedSuccessfully)
+                {
+                    if (parent == nullptr)
+                        return;
+
+                    if (openedSuccessfully && oldTemporaryDirectory != File())
+                        if (auto* newProject = parent->getProject())
+                            newProject->setTemporaryDirectory (oldTemporaryDirectory);
+                });
+            });
         }
     });
 }
 
 void Project::ProjectFileModificationPoller::resaveProject()
 {
-    project.saveProject();
     reset();
+    project.saveProject (Async::yes, nullptr, nullptr);
 }
 
 //==============================================================================
@@ -112,7 +121,7 @@ Project::Project (const File& f)
     updateJUCEPathWarning();
     getGlobalProperties().addChangeListener (this);
 
-    if (! app.isRunningCommandLine)
+    if (! app.isRunningCommandLine && app.isAutomaticVersionCheckingEnabled())
         LatestVersionCheckerAndUpdater::getInstance()->checkForNewVersion (true);
 }
 
@@ -123,7 +132,7 @@ Project::~Project()
 
     auto& app = ProjucerApplication::getApp();
 
-    app.openDocumentManager.closeAllDocumentsUsingProject (*this, OpenDocumentManager::SaveIfNeeded::no);
+    app.openDocumentManager.closeAllDocumentsUsingProjectWithoutSaving (*this);
 
     if (! app.isRunningCommandLine)
         app.getLicenseController().removeListener (this);
@@ -215,7 +224,7 @@ bool Project::setCppVersionFromOldExporterSettings()
         }
     }
 
-    if (highestLanguageStandard != -1 && highestLanguageStandard >= 11)
+    if (highestLanguageStandard >= 14)
     {
         cppStandardValue = highestLanguageStandard;
         return true;
@@ -226,6 +235,9 @@ bool Project::setCppVersionFromOldExporterSettings()
 
 void Project::updateDeprecatedProjectSettings()
 {
+    if (cppStandardValue.get().toString() == "11")
+        cppStandardValue.resetToDefault();
+
     for (ExporterIterator exporter (*this); exporter.next();)
         exporter->updateDeprecatedSettings();
 }
@@ -275,7 +287,7 @@ void Project::initialiseProjectValues()
     useAppConfigValue.referTo             (projectRoot, Ids::useAppConfig,                  getUndoManager(), true);
     addUsingNamespaceToJuceHeader.referTo (projectRoot, Ids::addUsingNamespaceToJuceHeader, getUndoManager(), true);
 
-    cppStandardValue.referTo       (projectRoot, Ids::cppLanguageStandard, getUndoManager(), "14");
+    cppStandardValue.referTo (projectRoot, Ids::cppLanguageStandard, getUndoManager(), "14");
 
     headerSearchPathsValue.referTo   (projectRoot, Ids::headerPath, getUndoManager());
     preprocessorDefsValue.referTo    (projectRoot, Ids::defines,    getUndoManager());
@@ -395,9 +407,9 @@ void Project::removeDefunctExporters()
             if (ProjucerApplication::getApp().isRunningCommandLine)
                 std::cout <<  "WARNING! The " + oldExporters[key]  + " Exporter is deprecated. The exporter will be removed from this project." << std::endl;
             else
-                AlertWindow::showMessageBox (AlertWindow::WarningIcon,
-                                             TRANS (oldExporters[key]),
-                                             TRANS ("The " + oldExporters[key]  + " Exporter is deprecated. The exporter will be removed from this project."));
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon,
+                                                  TRANS (oldExporters[key]),
+                                                  TRANS ("The " + oldExporters[key]  + " Exporter is deprecated. The exporter will be removed from this project."));
 
             exporters.removeChild (oldExporter, nullptr);
         }
@@ -641,8 +653,6 @@ Result Project::loadDocument (const File& file)
     moveOldPropertyFromProjectToAllExporters (Ids::smallIcon);
     getEnabledModules().sortAlphabetically();
 
-    compileEngineSettings.reset (new CompileEngineSettings (projectRoot));
-
     rescanExporterPathModules (! ProjucerApplication::getApp().isRunningCommandLine);
     exporterPathsModulesList.addListener (this);
 
@@ -653,6 +663,7 @@ Result Project::loadDocument (const File& file)
 
     setChangedFlag (false);
 
+    updateExporterWarnings();
     updateLicenseWarning();
 
     return Result::ok();
@@ -660,43 +671,73 @@ Result Project::loadDocument (const File& file)
 
 Result Project::saveDocument (const File& file)
 {
-    jassert (file == getFile());
-    ignoreUnused (file);
+    jassertquiet (file == getFile());
 
-    return saveProject();
+    auto sharedResult = Result::ok();
+
+    saveProject (Async::no, nullptr, [&sharedResult] (Result actualResult)
+    {
+        sharedResult = actualResult;
+    });
+
+    return sharedResult;
 }
 
-Result Project::saveProject (ProjectExporter* exporterToSave)
+void Project::saveDocumentAsync (const File& file, std::function<void (Result)> afterSave)
+{
+    jassertquiet (file == getFile());
+
+    saveProject (Async::yes, nullptr, std::move (afterSave));
+}
+
+void Project::saveProject (Async async,
+                           ProjectExporter* exporterToSave,
+                           std::function<void (Result)> onCompletion)
 {
     if (isSaveAndExportDisabled())
-        return Result::fail ("Save and export is disabled.");
-
-    if (isSaving)
-        return Result::ok();
+    {
+        onCompletion (Result::fail ("Save and export is disabled."));
+        return;
+    }
 
     if (isTemporaryProject())
     {
-        saveAndMoveTemporaryProject (false);
-        return Result::ok();
+        // Don't try to save a temporary project directly. Instead, check whether the
+        // project is temporary before saving it, and call saveAndMoveTemporaryProject
+        // in that case.
+        onCompletion (Result::fail ("Cannot save temporary project."));
+        return;
+    }
+
+    if (saver != nullptr)
+    {
+        onCompletion (Result::ok());
+        return;
     }
 
     updateProjectSettings();
 
     if (! ProjucerApplication::getApp().isRunningCommandLine)
     {
-        ProjucerApplication::getApp().openDocumentManager.saveAll();
+        ProjucerApplication::getApp().openDocumentManager.saveAllSyncWithoutAsking();
 
         if (! isTemporaryProject())
             registerRecentFile (getFile());
     }
 
-    const ScopedValueSetter<bool> vs (isSaving, true, false);
+    saver = std::make_unique<ProjectSaver> (*this);
 
-    ProjectSaver saver (*this);
-    return saver.save (exporterToSave);
+    saver->save (async, exporterToSave, [ref = WeakReference<Project> { this }, onCompletion] (Result result)
+    {
+        if (ref == nullptr)
+            return;
+
+        ref->saver = nullptr;
+        NullCheckedInvocation::invoke (onCompletion, result);
+    });
 }
 
-Result Project::openProjectInIDE (ProjectExporter& exporterToOpen, bool saveFirst)
+void Project::openProjectInIDE (ProjectExporter& exporterToOpen)
 {
     for (ExporterIterator exporter (*this); exporter.next();)
     {
@@ -705,33 +746,19 @@ Result Project::openProjectInIDE (ProjectExporter& exporterToOpen, bool saveFirs
             if (isTemporaryProject())
             {
                 saveAndMoveTemporaryProject (true);
-                return Result::ok();
+                return;
             }
-
-            if (saveFirst)
-            {
-                auto result = saveProject();
-
-                if (! result.wasOk())
-                    return result;
-            }
-
-            // Workaround for a bug where Xcode thinks the project is invalid if opened immediately
-            // after writing
-            if (saveFirst && exporter->isXcode())
-                Thread::sleep (1000);
 
             exporter->launchProject();
+            return;
         }
     }
-
-    return Result::ok();
 }
 
 Result Project::saveResourcesOnly()
 {
-    ProjectSaver saver (*this);
-    return saver.saveResourcesOnly();
+    saver = std::make_unique<ProjectSaver> (*this);
+    return saver->saveResourcesOnly();
 }
 
 bool Project::hasIncompatibleLicenseTypeAndSplashScreenSetting() const
@@ -745,9 +772,15 @@ bool Project::hasIncompatibleLicenseTypeAndSplashScreenSetting() const
           && ! ProjucerApplication::getApp().getLicenseController().getCurrentState().canUnlockFullFeatures();
 }
 
+bool Project::isFileModificationCheckPending() const
+{
+    return fileModificationPoller.isCheckPending();
+}
+
 bool Project::isSaveAndExportDisabled() const
 {
-    return ! ProjucerApplication::getApp().isRunningCommandLine && hasIncompatibleLicenseTypeAndSplashScreenSetting();
+    return ! ProjucerApplication::getApp().isRunningCommandLine
+           && (hasIncompatibleLicenseTypeAndSplashScreenSetting() || isFileModificationCheckPending());
 }
 
 void Project::updateLicenseWarning()
@@ -822,6 +855,20 @@ void Project::updateModuleWarnings()
     updateModuleNotFoundWarning (moduleNotFound);
 }
 
+void Project::updateExporterWarnings()
+{
+    auto isClionPresent = [this]()
+    {
+        for (ExporterIterator exporter (*this); exporter.next();)
+            if (exporter->isCLion())
+                return true;
+
+        return false;
+    }();
+
+    updateCLionWarning (isClionPresent);
+}
+
 void Project::updateCppStandardWarning (bool showWarning)
 {
     if (showWarning)
@@ -885,6 +932,14 @@ void Project::updateOldProjucerWarning (bool showWarning)
         addProjectMessage (ProjectMessages::Ids::oldProjucer, {});
     else
         removeProjectMessage (ProjectMessages::Ids::oldProjucer);
+}
+
+void Project::updateCLionWarning (bool showWarning)
+{
+    if (showWarning)
+        addProjectMessage (ProjectMessages::Ids::cLion, {});
+    else
+        removeProjectMessage (ProjectMessages::Ids::cLion);
 }
 
 void Project::updateModuleNotFoundWarning (bool showWarning)
@@ -959,37 +1014,40 @@ void Project::setTemporaryDirectory (const File& dir) noexcept
 
 void Project::saveAndMoveTemporaryProject (bool openInIDE)
 {
-    FileChooser fc ("Save Project");
-    fc.browseForDirectory();
+    chooser = std::make_unique<FileChooser> ("Save Project");
+    auto flags = FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories;
 
-    auto newParentDirectory = fc.getResult();
-
-    if (! newParentDirectory.exists())
-        return;
-
-    auto newDirectory = newParentDirectory.getChildFile (tempDirectory.getFileName());
-    auto oldJucerFileName = getFile().getFileName();
-
-    ProjectSaver saver (*this);
-    saver.save();
-
-    tempDirectory.copyDirectoryTo (newDirectory);
-    tempDirectory.deleteRecursively();
-    tempDirectory = File();
-
-    // reload project from new location
-    if (auto* window = ProjucerApplication::getApp().mainWindowList.getMainWindowForFile (getFile()))
+    chooser->launchAsync (flags, [this, openInIDE] (const FileChooser& fc)
     {
-        Component::SafePointer<MainWindow> safeWindow (window);
+        auto newParentDirectory = fc.getResult();
 
-        MessageManager::callAsync ([safeWindow, newDirectory, oldJucerFileName, openInIDE]() mutable
+        if (! newParentDirectory.exists())
+            return;
+
+        auto newDirectory = newParentDirectory.getChildFile (tempDirectory.getFileName());
+        auto oldJucerFileName = getFile().getFileName();
+
+        saver = std::make_unique<ProjectSaver> (*this);
+        saver->save (Async::yes, nullptr, [this, newDirectory, oldJucerFileName, openInIDE] (Result)
         {
-            if (safeWindow != nullptr)
-                safeWindow->moveProject (newDirectory.getChildFile (oldJucerFileName),
-                                         openInIDE ? MainWindow::OpenInIDE::yes
-                                                   : MainWindow::OpenInIDE::no);
+            tempDirectory.copyDirectoryTo (newDirectory);
+            tempDirectory.deleteRecursively();
+            tempDirectory = File();
+
+            // reload project from new location
+            if (auto* window = ProjucerApplication::getApp().mainWindowList.getMainWindowForFile (getFile()))
+            {
+                MessageManager::callAsync ([newDirectory, oldJucerFileName, openInIDE,
+                                            safeWindow = Component::SafePointer<MainWindow> { window }]() mutable
+                                           {
+                                               if (safeWindow != nullptr)
+                                                   safeWindow->moveProject (newDirectory.getChildFile (oldJucerFileName),
+                                                                            openInIDE ? MainWindow::OpenInIDE::yes
+                                                                                      : MainWindow::OpenInIDE::no);
+                                           });
+            }
         });
-    }
+    });
 }
 
 //==============================================================================
@@ -1033,9 +1091,9 @@ void Project::valueTreePropertyChanged (ValueTree& tree, const Identifier& prope
         {
             updateModuleWarnings();
         }
-
-        changed();
     }
+
+    changed();
 }
 
 void Project::valueTreeChildAdded (ValueTree& parent, ValueTree& child)
@@ -1044,6 +1102,8 @@ void Project::valueTreeChildAdded (ValueTree& parent, ValueTree& child)
 
     if (child.getType() == Ids::MODULE)
         updateModuleWarnings();
+    else if (parent.getType() == Ids::EXPORTFORMATS)
+        updateExporterWarnings();
 
     changed();
 }
@@ -1054,6 +1114,8 @@ void Project::valueTreeChildRemoved (ValueTree& parent, ValueTree& child, int in
 
     if (child.getType() == Ids::MODULE)
         updateModuleWarnings();
+    else if (parent.getType() == Ids::EXPORTFORMATS)
+        updateExporterWarnings();
 
     changed();
 }
@@ -1187,33 +1249,36 @@ bool Project::shouldBuildTargetType (build_tools::ProjectType::Target::Type targ
     return true;
 }
 
-static bool hasParentDirectory (File f, StringRef parentName)
-{
-    for (int depth = 0; depth < 2; ++depth)
-    {
-        auto parent = f.getParentDirectory();
-
-        if (parent.getFileName() == parentName)
-            return true;
-
-        f = parent;
-    }
-
-    return false;
-}
-
 build_tools::ProjectType::Target::Type Project::getTargetTypeFromFilePath (const File& file, bool returnSharedTargetIfNoValidSuffix)
 {
-    if      (LibraryModule::CompileUnit::hasSuffix (file, "_AU") || hasParentDirectory (file, "AU"))                 return build_tools::ProjectType::Target::AudioUnitPlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_AUv3") || hasParentDirectory (file, "AU"))               return build_tools::ProjectType::Target::AudioUnitv3PlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_AAX") || hasParentDirectory (file, "AAX"))               return build_tools::ProjectType::Target::AAXPlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_RTAS") || hasParentDirectory (file, "RTAS"))             return build_tools::ProjectType::Target::RTASPlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_VST2") || hasParentDirectory (file, "VST"))              return build_tools::ProjectType::Target::VSTPlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_VST3") || hasParentDirectory (file, "VST3"))             return build_tools::ProjectType::Target::VST3PlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_Standalone") || hasParentDirectory (file, "Standalone")) return build_tools::ProjectType::Target::StandalonePlugIn;
-    else if (LibraryModule::CompileUnit::hasSuffix (file, "_Unity") || hasParentDirectory (file, "Unity"))           return build_tools::ProjectType::Target::UnityPlugIn;
+    auto path = file.getFullPathName();
+    String pluginClientModuleName = "juce_audio_plugin_client";
 
-    return (returnSharedTargetIfNoValidSuffix ? build_tools::ProjectType::Target::SharedCodeTarget : build_tools::ProjectType::Target::unspecified);
+    auto isInPluginClientSubdir = [&path, &pluginClientModuleName] (StringRef subDir)
+    {
+        return path.contains (pluginClientModuleName
+                             + File::getSeparatorString()
+                             + subDir
+                             + File::getSeparatorString());
+    };
+
+    auto isPluginClientSource = [&path, &pluginClientModuleName] (StringRef suffix)
+    {
+        auto prefix = pluginClientModuleName + "_" + suffix;
+        return path.contains (prefix + ".") || path.contains (prefix + "_");
+    };
+
+    if (isPluginClientSource ("AU")         || isInPluginClientSubdir ("AU"))          return build_tools::ProjectType::Target::AudioUnitPlugIn;
+    if (isPluginClientSource ("AUv3")       || isInPluginClientSubdir ("AU"))          return build_tools::ProjectType::Target::AudioUnitv3PlugIn;
+    if (isPluginClientSource ("AAX")        || isInPluginClientSubdir ("AAX"))         return build_tools::ProjectType::Target::AAXPlugIn;
+    if (isPluginClientSource ("RTAS")       || isInPluginClientSubdir ("RTAS"))        return build_tools::ProjectType::Target::RTASPlugIn;
+    if (isPluginClientSource ("VST2")       || isInPluginClientSubdir ("VST"))         return build_tools::ProjectType::Target::VSTPlugIn;
+    if (isPluginClientSource ("VST3")       || isInPluginClientSubdir ("VST3"))        return build_tools::ProjectType::Target::VST3PlugIn;
+    if (isPluginClientSource ("Standalone") || isInPluginClientSubdir ("Standalone"))  return build_tools::ProjectType::Target::StandalonePlugIn;
+    if (isPluginClientSource ("Unity")      || isInPluginClientSubdir ("Unity"))       return build_tools::ProjectType::Target::UnityPlugIn;
+
+    return (returnSharedTargetIfNoValidSuffix ? build_tools::ProjectType::Target::SharedCodeTarget
+                                              : build_tools::ProjectType::Target::unspecified);
 }
 
 //==============================================================================
@@ -1358,9 +1423,11 @@ void Project::createAudioPluginPropertyEditors (PropertyListBuilder& props)
     props.add (new TextPropertyComponent (pluginManufacturerValue, "Plugin Manufacturer", 256, false),
                "The name of your company (cannot be blank).");
     props.add (new TextPropertyComponent (pluginManufacturerCodeValue, "Plugin Manufacturer Code", 4, false),
-               "A four-character unique ID for your company. Note that for AU compatibility, this must contain at least one upper-case letter!");
+               "A four-character unique ID for your company. Note that for AU compatibility, this must contain at least one upper-case letter!"
+               " GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case.");
     props.add (new TextPropertyComponent (pluginCodeValue, "Plugin Code", 4, false),
-               "A four-character unique ID for your plugin. Note that for AU compatibility, this must contain at least one upper-case letter!");
+               "A four-character unique ID for your plugin. Note that for AU compatibility, this must contain exactly one upper-case letter!"
+               " GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case.");
     props.add (new TextPropertyComponent (pluginChannelConfigsValue, "Plugin Channel Configurations", 1024, false),
                "This list is a comma-separated set list in the form {numIns, numOuts} and each pair indicates a valid plug-in "
                "configuration. For example {1, 1}, {2, 2} means that the plugin can be used either with 1 input and 1 output, "
@@ -1509,6 +1576,11 @@ bool Project::Item::isImageFile() const
                           || getFile().hasFileExtension ("svg"));
 }
 
+bool Project::Item::isSourceFile() const
+{
+    return isFile() && getFile().hasFileExtension (sourceFileExtensions);
+}
+
 Project::Item Project::Item::findItemWithID (const String& targetId) const
 {
     if (state [Ids::ID] == targetId)
@@ -1563,6 +1635,9 @@ Value Project::Item::getShouldInhibitWarningsValue()        { return state.getPr
 bool Project::Item::shouldInhibitWarnings() const           { return state [Ids::noWarnings]; }
 
 bool Project::Item::isModuleCode() const                    { return belongsToModule; }
+
+Value Project::Item::getShouldSkipPCHValue()                { return state.getPropertyAsValue (Ids::skipPCH, getUndoManager()); }
+bool Project::Item::shouldSkipPCH() const                   { return isModuleCode() || state [Ids::skipPCH]; }
 
 Value Project::Item::getCompilerFlagSchemeValue()           { return state.getPropertyAsValue (Ids::compilerFlagScheme, getUndoManager()); }
 String Project::Item::getCompilerFlagSchemeString() const   { return state [Ids::compilerFlagScheme]; }
@@ -1891,9 +1966,6 @@ Icon Project::Item::getIcon (bool isOpen) const
         return { icons.file, Colours::transparentBlack };
     }
 
-    if (isMainGroup())
-        return { icons.juceLogo, Colours::orange };
-
     return { isOpen ? icons.openFolder : icons.closedFolder, Colours::transparentBlack };
 }
 
@@ -1928,7 +2000,7 @@ ValueTree Project::getConfigNode()
     return projectRoot.getOrCreateChildWithName (Ids::JUCEOPTIONS, nullptr);
 }
 
-ValueWithDefault Project::getConfigFlag (const String& name)
+ValueTreePropertyWithDefault Project::getConfigFlag (const String& name)
 {
     auto configNode = getConfigNode();
 
@@ -2507,7 +2579,7 @@ StringPairArray Project::getAudioPluginFlags() const
 
         for (int i = 0; i < 4; ++i)
             hexRepresentation = (hexRepresentation << 8u)
-                                |  (static_cast<unsigned int> (fourCharCode[i]) & 0xffu);
+                                | (static_cast<unsigned int> (fourCharCode[i]) & 0xffu);
 
         return "0x" + String::toHexString (static_cast<int> (hexRepresentation));
     };
@@ -2559,7 +2631,7 @@ StringPairArray Project::getAudioPluginFlags() const
     flags.set ("JucePlugin_AAXDisableMultiMono",         boolToString (isPluginAAXMultiMonoDisabled()));
     flags.set ("JucePlugin_IAAType",                     toCharLiteral (getIAATypeCode()));
     flags.set ("JucePlugin_IAASubType",                  "JucePlugin_PluginCode");
-    flags.set ("JucePlugin_IAAName",                     getIAAPluginName().quoted());
+    flags.set ("JucePlugin_IAAName",                     toStringLiteral (getIAAPluginName()));
     flags.set ("JucePlugin_VSTNumMidiInputs",            getVSTNumMIDIInputsString());
     flags.set ("JucePlugin_VSTNumMidiOutputs",           getVSTNumMIDIOutputsString());
 
@@ -2579,7 +2651,6 @@ StringPairArray Project::getAudioPluginFlags() const
 
 //==============================================================================
 Project::ExporterIterator::ExporterIterator (Project& p) : index (-1), project (p) {}
-Project::ExporterIterator::~ExporterIterator() {}
 
 bool Project::ExporterIterator::next()
 {

@@ -295,14 +295,6 @@ static bool isGlobalPathValid (const File& relativeTo, const Identifier& key, co
         fileToCheckFor = "platform-tools/adb";
        #endif
     }
-    else if (key == Ids::androidNDKPath)
-    {
-       #if JUCE_WINDOWS
-        fileToCheckFor = "ndk-depends.cmd";
-       #else
-        fileToCheckFor = "ndk-depends";
-       #endif
-    }
     else if (key == Ids::defaultJuceModulePath)
     {
         fileToCheckFor = "juce_core";
@@ -401,10 +393,6 @@ static String getFallbackPathForOS (const Identifier& key, DependencyPathOS os)
         jassertfalse;
         return {};
     }
-    else if (key == Ids::androidNDKPath)
-    {
-        return getFallbackPathForOS (Ids::androidSDKPath, os) + File::getSeparatorChar() + "ndk-bundle";
-    }
     else if (key == Ids::clionExePath)
     {
         if (os == TargetOS::windows)
@@ -466,10 +454,16 @@ static Identifier identifierForOS (DependencyPathOS os) noexcept
     return {};
 }
 
-ValueWithDefault StoredSettings::getStoredPath (const Identifier& key, DependencyPathOS os)
+ValueTreePropertyWithDefault StoredSettings::getStoredPath (const Identifier& key, DependencyPathOS os)
 {
     auto tree = (os == TargetOS::getThisOS() ? projectDefaults
                                              : fallbackPaths.getOrCreateChildWithName (identifierForOS (os), nullptr));
 
     return { tree, key, nullptr, getFallbackPathForOS (key, os) };
 }
+
+void StoredSettings::addProjectDefaultsListener (ValueTree::Listener& l)     { projectDefaults.addListener (&l); }
+void StoredSettings::removeProjectDefaultsListener (ValueTree::Listener& l)  { projectDefaults.removeListener (&l); }
+
+void StoredSettings::addFallbackPathsListener (ValueTree::Listener& l)       { fallbackPaths.addListener (&l); }
+void StoredSettings::removeFallbackPathsListener (ValueTree::Listener& l)    { fallbackPaths.removeListener (&l); }

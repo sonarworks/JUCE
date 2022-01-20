@@ -57,6 +57,9 @@ struct JUCEDemos
     static File findExamplesDirectoryFromExecutable (File exec);
 };
 
+void registerDemos_One() noexcept;
+void registerDemos_Two() noexcept;
+
 //==============================================================================
 // used by child-process demo
 bool invokeChildProcessDemo (const String& commandLine);
@@ -72,3 +75,4 @@ CodeEditorComponent::ColourScheme getLightColourScheme();
 extern std::unique_ptr<AudioDeviceManager> sharedAudioDeviceManager;
 
 AudioDeviceManager& getSharedAudioDeviceManager (int numInputChannels = -1, int numOutputChannels = -1);
+ApplicationCommandManager& getGlobalCommandManager();

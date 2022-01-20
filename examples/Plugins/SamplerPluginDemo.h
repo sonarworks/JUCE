@@ -42,6 +42,8 @@
 
  useLocalCopy:     1
 
+ pluginCharacteristics: pluginIsSynth, pluginWantsMidiIn
+
  END_JUCE_PIP_METADATA
 
 *******************************************************************************/
@@ -270,7 +272,7 @@ public:
         jassert (currentlyPlayingNote.keyState == MPENote::keyDown
               || currentlyPlayingNote.keyState == MPENote::keyDownAndSustained);
 
-        level    .setTargetValue (currentlyPlayingNote.pressure.asUnsignedFloat());
+        level    .setTargetValue (currentlyPlayingNote.noteOnVelocity.asUnsignedFloat());
         frequency.setTargetValue (currentlyPlayingNote.getFrequencyInHertz());
 
         auto loopPoints = samplerSound->getLoopPointsInSeconds();
@@ -280,6 +282,7 @@ public:
         for (auto smoothed : { &level, &frequency, &loopBegin, &loopEnd })
             smoothed->reset (currentSampleRate, smoothingLengthInSeconds);
 
+        previousPressure = currentlyPlayingNote.pressure.asUnsignedFloat();
         currentSamplePos = 0.0;
         tailOff          = 0.0;
     }
@@ -296,7 +299,10 @@ public:
 
     void notePressureChanged() override
     {
-        level.setTargetValue (currentlyPlayingNote.pressure.asUnsignedFloat());
+        const auto currentPressure = static_cast<double> (currentlyPlayingNote.pressure.asUnsignedFloat());
+        const auto deltaPressure = currentPressure - previousPressure;
+        level.setTargetValue (jlimit (0.0, 1.0, level.getCurrentValue() + deltaPressure));
+        previousPressure = currentPressure;
     }
 
     void notePitchbendChanged() override
@@ -487,6 +493,7 @@ private:
     SmoothedValue<double> frequency { 0 };
     SmoothedValue<double> loopBegin;
     SmoothedValue<double> loopEnd;
+    double previousPressure { 0 };
     double currentSamplePos { 0 };
     double tailOff { 0 };
     Direction currentDirection { Direction::forward };
@@ -1811,14 +1818,18 @@ private:
 
     void sampleReaderChanged (std::shared_ptr<AudioFormatReaderFactory> value) override
     {
-        if (value == nullptr)
-            thumbnail.clear();
-        else
+        if (value != nullptr)
         {
-            auto reader = value->make (dataModel.getAudioFormatManager());
-            thumbnail.setReader (reader.release(), currentHashCode);
-            currentHashCode += 1;
+            if (auto reader = value->make (dataModel.getAudioFormatManager()))
+            {
+                thumbnail.setReader (reader.release(), currentHashCode);
+                currentHashCode += 1;
+
+                return;
+            }
         }
+
+        thumbnail.clear();
     }
 
     void visibleRangeChanged (Range<double>) override
@@ -1926,10 +1937,15 @@ public:
 
         auto setReader = [this] (const FileChooser& fc)
         {
-            undoManager.beginNewTransaction();
-            auto readerFactory = new FileAudioFormatReaderFactory (fc.getResult());
-            dataModel.setSampleReader (std::unique_ptr<AudioFormatReaderFactory> (readerFactory),
-                                       &undoManager);
+            const auto result = fc.getResult();
+
+            if (result != File())
+            {
+                undoManager.beginNewTransaction();
+                auto readerFactory = new FileAudioFormatReaderFactory (result);
+                dataModel.setSampleReader (std::unique_ptr<AudioFormatReaderFactory> (readerFactory),
+                                           &undoManager);
+            }
         };
 
         loadNewSampleButton.onClick = [this, setReader]
@@ -2110,6 +2126,8 @@ public:
         AudioFormatManager manager;
         manager.registerBasicFormats();
         auto reader = readerFactory->make (manager);
+        jassert (reader != nullptr); // Failed to load resource!
+
         auto sound = samplerSound;
         auto sample = std::unique_ptr<Sample> (new Sample (*reader, 10.0));
         auto lengthInSeconds = sample->getLength() / sample->getSampleRate();
@@ -2172,7 +2190,7 @@ public:
     int getNumPrograms() override                                         { return 1; }
     int getCurrentProgram() override                                      { return 0; }
     void setCurrentProgram (int) override                                 {}
-    const String getProgramName (int) override                            { return {}; }
+    const String getProgramName (int) override                            { return "None"; }
     void changeProgramName (int, const String&) override                  {}
 
     //==============================================================================
@@ -2240,9 +2258,8 @@ public:
                                              nullptr,
                                              move (newSamplerVoices)));
         }
-        else
+        else if (auto reader = fact->make (formatManager))
         {
-            auto reader = fact->make (formatManager);
             commands.push (SetSampleCommand (move (fact),
                                              std::unique_ptr<Sample> (new Sample (*reader, 10.0)),
                                              move (newSamplerVoices)));
@@ -2334,7 +2351,7 @@ public:
             std::vector<std::unique_ptr<MPESamplerVoice>> newVoices;
         };
 
-        numberOfVoices = std::min (maxVoices, numberOfVoices);
+        numberOfVoices = std::min ((int) maxVoices, numberOfVoices);
         auto loadedSamplerSound = samplerSound;
         std::vector<std::unique_ptr<MPESamplerVoice>> newSamplerVoices;
         newSamplerVoices.reserve ((size_t) numberOfVoices);
@@ -2585,12 +2602,10 @@ private:
     // with the real state of the processor.
     SpinLock commandQueueMutex;
 
-    static constexpr auto maxVoices { 20 };
+    enum { maxVoices = 20 };
 
     // This is used for visualising the current playback position of each voice.
     std::array<std::atomic<float>, maxVoices> playbackPositions;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SamplerAudioProcessor)
 };
-
-const int SamplerAudioProcessor::maxVoices;

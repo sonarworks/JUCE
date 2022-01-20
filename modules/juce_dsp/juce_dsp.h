@@ -35,7 +35,7 @@
 
   ID:                 juce_dsp
   vendor:             juce
-  version:            6.0.1
+  version:            6.1.4
   name:               JUCE DSP classes
   description:        Classes for audio buffer manipulation, digital audio processing, filtering, oversampling, fast math functions etc.
   website:            http://www.juce.com/juce
@@ -101,10 +101,7 @@
  #endif
 #endif
 
-#include <atomic>
 #include <complex>
-#include <cmath>
-#include <array>
 
 
 //==============================================================================
@@ -126,10 +123,11 @@
     If this flag is set, then JUCE will use Intel's MKL for JUCE's FFT and
     convolution classes.
 
-    The folder containing the mkl_dfti.h header must be in your header
-    search paths when using this flag. You also need to add all the necessary
-    intel mkl libraries to the "External Libraries to Link" field in the
-    Projucer.
+    If you're using the Projucer's Visual Studio exporter, you should also set
+    the "Use MKL Library (oneAPI)" option in the exporter settings to
+    "Sequential" or "Parallel". If you're not using the Visual Studio exporter,
+    the folder containing the mkl_dfti.h header must be in your header search
+    paths, and you must link against all the necessary MKL libraries.
 */
 #ifndef JUCE_DSP_USE_INTEL_MKL
  #define JUCE_DSP_USE_INTEL_MKL 0
@@ -246,6 +244,7 @@ namespace juce
 #include "maths/juce_LookupTable.h"
 #include "maths/juce_LogRampedValue.h"
 #include "containers/juce_AudioBlock.h"
+#include "containers/juce_FixedSizeFunction.h"
 #include "processors/juce_ProcessContext.h"
 #include "processors/juce_ProcessorWrapper.h"
 #include "processors/juce_ProcessorChain.h"

@@ -42,6 +42,9 @@ if(JUCE_BUILD_HELPER_TOOLS)
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+    set_target_properties(juceaide PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
     export(TARGETS juceaide
            NAMESPACE juce_tools::
            FILE "${JUCE_BINARY_DIR}/JUCEToolsExport.cmake")
@@ -97,7 +100,7 @@ else()
 
     add_executable(juce::juceaide ALIAS juceaide)
 
-    set(JUCE_TOOL_INSTALL_DIR "bin" CACHE STRING
+    set(JUCE_TOOL_INSTALL_DIR "bin/JUCE-${JUCE_VERSION}" CACHE STRING
         "The location, relative to the install prefix, where juceaide will be installed")
 
     install(PROGRAMS "${imported_location}" DESTINATION "${JUCE_TOOL_INSTALL_DIR}")

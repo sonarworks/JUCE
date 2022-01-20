@@ -47,7 +47,7 @@
 #pragma once
 
 #ifndef PIP_DEMO_UTILITIES_INCLUDED
- #include "../Assets/DemoUtilities.h"
+#include "../Assets/DemoUtilities.h"
 #endif
 
 //==============================================================================
@@ -87,11 +87,11 @@ public:
 
     void clicked() override
     {
-        auto* colourSelector = new ColourSelector (ColourSelector::showAlphaChannel
-                                                   | ColourSelector::showColourAtTop
-                                                   | ColourSelector::editableColour
-                                                   | ColourSelector::showSliders
-                                                   | ColourSelector::showColourspace);
+        auto colourSelector = std::make_unique<ColourSelector> (ColourSelector::showAlphaChannel
+                                                                | ColourSelector::showColourAtTop
+                                                                | ColourSelector::editableColour
+                                                                | ColourSelector::showSliders
+                                                                | ColourSelector::showColourspace);
 
         colourSelector->setName ("background");
         colourSelector->setCurrentColour (findColour (TextButton::buttonColourId));
@@ -99,7 +99,7 @@ public:
         colourSelector->setColour (ColourSelector::backgroundColourId, Colours::transparentBlack);
         colourSelector->setSize (300, 400);
 
-        CallOutBox::launchAsynchronously (colourSelector, getScreenBounds(), nullptr);
+        CallOutBox::launchAsynchronously (std::move (colourSelector), getScreenBounds(), nullptr);
     }
 
     using TextButton::clicked;
@@ -435,7 +435,7 @@ struct ButtonsPage   : public Component
                            juceImage, 1.0f, getRandomBrightColour().withAlpha (0.8f),
                            0.5f);
 
-            ib->setBounds (260, 350, 100, 100);
+            ib->setBounds (45, 380, 100, 100);
             ib->setTooltip ("ImageButton - showing alpha-channel hit-testing and colour overlay when clicked");
         }
     }
@@ -494,6 +494,198 @@ struct MiscPage   : public Component
                textEditor2  { "Password", (juce_wchar) 0x2022 };
 
     ComboBox comboBox  { "Combo" };
+};
+
+//==============================================================================
+struct MenuPage   : public Component
+{
+    MenuPage()
+    {
+        addAndMakeVisible (shortMenuButton);
+        shortMenuButton.onClick = [&]
+        {
+            PopupMenu menu;
+            menu.addItem ("Single Item", nullptr);
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (shortMenuButton));
+        };
+
+        addAndMakeVisible (longMenuButton);
+        longMenuButton.onClick = [&]
+        {
+            PopupMenu menu;
+
+            for (int i = 0; i < 40; ++i)
+                menu.addItem ("Item " + String (i), nullptr);
+
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (longMenuButton));
+        };
+
+        addAndMakeVisible (nestedMenusButton);
+        nestedMenusButton.onClick = [&]
+        {
+            PopupMenu menu;
+
+            for (int i = 0; i < 15; ++i)
+            {
+                PopupMenu subMenu;
+
+                for (int j = 0; j < 10; ++j)
+                {
+                    if (j % 2 == 0)
+                    {
+                        PopupMenu subSubMenu;
+
+                        for (int z = 0; z < 5; ++z)
+                            subSubMenu.addItem ("Sub-sub-item " + String (z), nullptr);
+
+                        subMenu.addSubMenu ("Sub-item " + String (j), subSubMenu);
+                    }
+                    else
+                    {
+                        subMenu.addItem ("Sub-item " + String (j), nullptr);
+                    }
+                }
+
+                menu.addSubMenu ("Item " + String (i), subMenu);
+            }
+
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (nestedMenusButton));
+        };
+
+        addAndMakeVisible (multiColumnMenuButton);
+        multiColumnMenuButton.onClick = [&]
+        {
+            PopupMenu menu;
+
+            for (int i = 0; i < 200; ++i)
+                menu.addItem ("Item " + String (i), nullptr);
+
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (multiColumnMenuButton)
+                                                    .withMinimumNumColumns (2)
+                                                    .withMaximumNumColumns (4));
+        };
+
+        addAndMakeVisible (customItemButton);
+        customItemButton.onClick = [&]
+        {
+            struct CustomComponent  : public PopupMenu::CustomComponent
+            {
+                CustomComponent (int widthIn, int heightIn, Colour backgroundIn)
+                    : idealWidth (widthIn), idealHeight (heightIn), background (backgroundIn)
+                {}
+
+                void getIdealSize (int& width, int& height) override
+                {
+                    width = idealWidth;
+                    height = idealHeight;
+                }
+
+                void paint (Graphics& g) override { g.fillAll (background); }
+
+                int idealWidth = 0;
+                int idealHeight = 0;
+                Colour background;
+            };
+
+            PopupMenu menu;
+
+            menu.addCustomItem (-1, std::make_unique<CustomComponent> (100,  20, Colours::darkred));
+            menu.addCustomItem (-1, std::make_unique<CustomComponent> (20,  100, Colours::darkgreen));
+            menu.addCustomItem (-1, std::make_unique<CustomComponent> (100, 100, Colours::darkblue));
+            menu.addCustomItem (-1, std::make_unique<CustomComponent> (100,  50, Colours::darkcyan));
+            menu.addCustomItem (-1, std::make_unique<CustomComponent> (50,  100, Colours::darkmagenta));
+
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (customItemButton)
+                                                    .withMinimumNumColumns (5));
+        };
+
+        addAndMakeVisible (fancyThemeButton);
+        fancyThemeButton.setLookAndFeel (&popupLookAndFeel);
+        fancyThemeButton.onClick = [&]
+        {
+            const auto colour = Colour::fromHSL (randomColourGenerator.nextFloat(), 0.5f, 0.5f, 1.0f);
+            fancyThemeButton.setColour (TextButton::buttonColourId, colour);
+
+            PopupMenu menu;
+            menu.setLookAndFeel (&popupLookAndFeel);
+
+            for (auto length : { 5, 10, 7, 3 })
+            {
+                for (int i = 0; i < length; ++i)
+                    menu.addItem ("Item " + String (i), nullptr);
+
+                menu.addColumnBreak();
+            }
+
+            menu.showMenuAsync (PopupMenu::Options{}.withTargetComponent (&fancyThemeButton));
+        };
+    }
+
+    void resized() override
+    {
+        const auto makeItem = [] (Component& comp)
+        {
+            return FlexItem { comp }.withWidth (200).withHeight (24).withMargin ({ 4 });
+        };
+
+        FlexBox box;
+        box.flexDirection = FlexBox::Direction::column;
+        box.items = { makeItem (shortMenuButton),
+                      makeItem (longMenuButton),
+                      makeItem (nestedMenusButton),
+                      makeItem (multiColumnMenuButton),
+                      makeItem (customItemButton),
+                      makeItem (fancyThemeButton) };
+
+        box.performLayout (getLocalBounds());
+    }
+
+    struct PopupMenuLookAndFeel : public LookAndFeel_V4
+    {
+        void drawPopupMenuColumnSeparatorWithOptions (Graphics& g,
+                                                      const Rectangle<int>& bounds,
+                                                      const PopupMenu::Options& opt)
+        {
+            if (auto* target = opt.getTargetComponent())
+            {
+                const auto baseColour = target->findColour (TextButton::buttonColourId);
+                g.setColour (baseColour.brighter (0.4f));
+
+                const float dashes[] { 5.0f, 5.0f };
+                const auto centre = bounds.toFloat().getCentre();
+
+                g.drawDashedLine ({ centre.withY ((float) bounds.getY()),
+                                    centre.withY ((float) bounds.getBottom()) },
+                                  dashes,
+                                  numElementsInArray (dashes),
+                                  3.0f);
+            }
+        }
+
+        void drawPopupMenuBackgroundWithOptions (Graphics& g, int, int, const PopupMenu::Options& opt)
+        {
+            if (auto* target = opt.getTargetComponent())
+            {
+                g.fillAll (target->findColour (TextButton::buttonColourId));
+            }
+        }
+
+        // Return the amount of space that should be left between popup menu columns.
+        int getPopupMenuColumnSeparatorWidthWithOptions (const PopupMenu::Options&)
+        {
+            return 10;
+        }
+    };
+
+    Random randomColourGenerator;
+    PopupMenuLookAndFeel popupLookAndFeel;
+
+    TextButton shortMenuButton       { "Short" },
+               longMenuButton        { "Long" },
+               nestedMenusButton     { "Nested Sub-Menus" },
+               multiColumnMenuButton { "Multi Column" },
+               customItemButton      { "Custom Items" },
+               fancyThemeButton      { "Fancy Theme with Column Breaks" };
 };
 
 //==============================================================================
@@ -757,7 +949,7 @@ public:
         table.setOutlineThickness (1);
 
         // Add some columns to the table header, based on the column list in our database..
-        forEachXmlChildElement (*columnList, columnXml)
+        for (auto* columnXml : columnList->getChildIterator())
         {
             table.getHeader().addColumn (columnXml->getStringAttribute ("name"),
                                          columnXml->getIntAttribute ("columnId"),
@@ -1052,7 +1244,7 @@ private:
     // (a utility method to search our XML for the attribute that matches a column ID)
     String getAttributeNameForColumnId (const int columnId) const
     {
-        forEachXmlChildElement (*columnList, columnXml)
+        for (auto* columnXml : columnList->getChildIterator())
         {
             if (columnXml->getIntAttribute ("columnId") == columnId)
                 return columnXml->getStringAttribute ("name");
@@ -1282,6 +1474,7 @@ struct DemoTabbedComponent  : public TabbedComponent
         addTab ("Sliders",     colour, new SlidersPage(),                                 true);
         addTab ("Toolbars",    colour, new ToolbarDemoComp(),                             true);
         addTab ("Misc",        colour, new MiscPage(),                                    true);
+        addTab ("Menus",       colour, new MenuPage(),                                    true);
         addTab ("Tables",      colour, new TableDemoComponent(),                          true);
         addTab ("Drag & Drop", colour, new DragAndDropDemo(),                             true);
 

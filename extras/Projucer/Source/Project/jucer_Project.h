@@ -31,7 +31,7 @@
 class ProjectExporter;
 class LibraryModule;
 class EnabledModulesList;
-class CompileEngineSettings;
+class ProjectSaver;
 
 namespace ProjectMessages
 {
@@ -48,6 +48,7 @@ namespace ProjectMessages
         DECLARE_ID (jucerFileModified);
         DECLARE_ID (missingModuleDependencies);
         DECLARE_ID (oldProjucer);
+        DECLARE_ID (cLion);
         DECLARE_ID (newVersionAvailable);
 
         DECLARE_ID (notification);
@@ -60,17 +61,15 @@ namespace ProjectMessages
 
     inline Identifier getTypeForMessage (const Identifier& message)
     {
-        if (message == Ids::incompatibleLicense || message == Ids::cppStandard || message == Ids::moduleNotFound
-            || message == Ids::jucePath || message == Ids::jucerFileModified || message == Ids::missingModuleDependencies
-            || message == Ids::oldProjucer)
-        {
+        static Identifier warnings[] = { Ids::incompatibleLicense, Ids::cppStandard, Ids::moduleNotFound,
+                                         Ids::jucePath, Ids::jucerFileModified, Ids::missingModuleDependencies,
+                                         Ids::oldProjucer, Ids::cLion };
+
+        if (std::find (std::begin (warnings), std::end (warnings), message) != std::end (warnings))
             return Ids::warning;
-        }
 
         if (message == Ids::newVersionAvailable)
-        {
             return Ids::notification;
-        }
 
         jassertfalse;
         return {};
@@ -86,6 +85,7 @@ namespace ProjectMessages
         if (message == Ids::missingModuleDependencies)  return "Missing Module Dependencies";
         if (message == Ids::oldProjucer)                return "Projucer Out of Date";
         if (message == Ids::newVersionAvailable)        return "New Version Available";
+        if (message == Ids::cLion)                      return "Deprecated Exporter";
 
         jassertfalse;
         return {};
@@ -101,6 +101,7 @@ namespace ProjectMessages
         if (message == Ids::missingModuleDependencies)  return "Module(s) have missing dependencies.";
         if (message == Ids::oldProjucer)                return "The version of the Projucer you are using is out of date.";
         if (message == Ids::newVersionAvailable)        return "A new version of JUCE is available to download.";
+        if (message == Ids::cLion)                      return "The CLion exporter is deprecated. Use JUCE's CMake support instead.";
 
         jassertfalse;
         return {};
@@ -108,6 +109,8 @@ namespace ProjectMessages
 
     using MessageAction = std::pair<String, std::function<void()>>;
 }
+
+enum class Async { no, yes };
 
 //==============================================================================
 class Project  : public FileBasedDocument,
@@ -125,10 +128,12 @@ public:
     String getDocumentTitle() override;
     Result loadDocument (const File& file) override;
     Result saveDocument (const File& file) override;
+    void saveDocumentAsync (const File& file, std::function<void (Result)> callback) override;
 
-    Result saveProject (ProjectExporter* exporterToSave = nullptr);
+    void saveProject (Async, ProjectExporter* exporterToSave, std::function<void (Result)> onCompletion);
+    void saveAndMoveTemporaryProject (bool openInIDE);
     Result saveResourcesOnly();
-    Result openProjectInIDE (ProjectExporter& exporterToOpen, bool saveFirst);
+    void openProjectInIDE (ProjectExporter& exporterToOpen);
 
     File getLastDocumentOpened() override;
     void setLastDocumentOpened (const File& file) override;
@@ -205,8 +210,14 @@ public:
     bool shouldDisplaySplashScreen() const               { return displaySplashScreenValue.get(); }
     String getSplashScreenColourString() const           { return splashScreenColourValue.get(); }
 
-    static StringArray getCppStandardStrings()           { return { "C++11", "C++14", "C++17", "Use Latest" }; }
-    static Array<var> getCppStandardVars()               { return { "11",    "14",    "17",    "latest" }; }
+    static StringArray getCppStandardStrings()           { return { "C++14", "C++17", "C++20", "Use Latest" }; }
+    static Array<var> getCppStandardVars()               { return { "14",    "17",    "20",    "latest" }; }
+
+    static String getLatestNumberedCppStandardString()
+    {
+        auto cppStandardVars = getCppStandardVars();
+        return cppStandardVars[cppStandardVars.size() - 2];
+    }
 
     String getCppStandardString() const                  { return cppStandardValue.get(); }
 
@@ -214,11 +225,11 @@ public:
     void addCompilerFlagScheme (const String&);
     void removeCompilerFlagScheme (const String&);
 
-    String getPostExportShellCommandPosixString() const     { return postExportShellCommandPosixValue.get(); }
-    String getPostExportShellCommandWinString() const       { return postExportShellCommandWinValue.get(); }
+    String getPostExportShellCommandPosixString() const  { return postExportShellCommandPosixValue.get(); }
+    String getPostExportShellCommandWinString() const    { return postExportShellCommandWinValue.get(); }
 
-    bool shouldUseAppConfig() const                   { return useAppConfigValue.get(); }
-    bool shouldAddUsingNamespaceToJuceHeader() const  { return addUsingNamespaceToJuceHeader.get(); }
+    bool shouldUseAppConfig() const                      { return useAppConfigValue.get(); }
+    bool shouldAddUsingNamespaceToJuceHeader() const     { return addUsingNamespaceToJuceHeader.get(); }
 
     //==============================================================================
     String getPluginNameString() const                { return pluginNameValue.get(); }
@@ -232,7 +243,7 @@ public:
     String getVSTNumMIDIInputsString() const          { return pluginVSTNumMidiInputsValue.get(); }
     String getVSTNumMIDIOutputsString() const         { return pluginVSTNumMidiOutputsValue.get(); }
 
-    static bool checkMultiChoiceVar (const ValueWithDefault& valueToCheck, Identifier idToCheck) noexcept
+    static bool checkMultiChoiceVar (const ValueTreePropertyWithDefault& valueToCheck, Identifier idToCheck) noexcept
     {
         if (! valueToCheck.get().isArray())
             return false;
@@ -310,8 +321,7 @@ public:
     bool isVST3PluginHost();
 
     //==============================================================================
-    bool shouldBuildTargetType (
-        build_tools::ProjectType::Target::Type targetType) const noexcept;
+    bool shouldBuildTargetType (build_tools::ProjectType::Target::Type targetType) const noexcept;
     static build_tools::ProjectType::Target::Type getTargetTypeFromFilePath (const File& file, bool returnSharedTargetIfNoValidSuffix);
 
     //==============================================================================
@@ -341,6 +351,7 @@ public:
         bool isGroup() const;
         bool isMainGroup() const;
         bool isImageFile() const;
+        bool isSourceFile() const;
 
         String getID() const;
         void setID (const String& newID);
@@ -374,6 +385,9 @@ public:
         bool shouldInhibitWarnings() const;
 
         bool isModuleCode() const;
+
+        Value getShouldSkipPCHValue();
+        bool shouldSkipPCH() const;
 
         Value getCompilerFlagSchemeValue();
         String getCompilerFlagSchemeString() const;
@@ -430,7 +444,6 @@ public:
     struct ExporterIterator
     {
         ExporterIterator (Project& project);
-        ~ExporterIterator();
 
         bool next();
 
@@ -449,10 +462,10 @@ public:
     struct ConfigFlag
     {
         String symbol, description, sourceModuleID;
-        ValueWithDefault value;
+        ValueTreePropertyWithDefault value;
     };
 
-    ValueWithDefault getConfigFlag (const String& name);
+    ValueTreePropertyWithDefault getConfigFlag (const String& name);
     bool isConfigFlagEnabled (const String& name, bool defaultIsEnabled = false) const;
 
     //==============================================================================
@@ -483,14 +496,11 @@ public:
     String getUniqueTargetFolderSuffixForExporter (const Identifier& exporterIdentifier, const String& baseTargetFolder);
 
     //==============================================================================
-    bool isCurrentlySaving() const noexcept              { return isSaving; }
+    bool isCurrentlySaving() const noexcept              { return saver != nullptr; }
 
     bool isTemporaryProject() const noexcept             { return tempDirectory != File(); }
     File getTemporaryDirectory() const noexcept          { return tempDirectory; }
     void setTemporaryDirectory (const File&) noexcept;
-
-    //==============================================================================
-    CompileEngineSettings& getCompileEngineSettings()    { return *compileEngineSettings; }
 
     //==============================================================================
     ValueTree getProjectMessages() const  { return projectMessages; }
@@ -502,6 +512,7 @@ public:
 
     //==============================================================================
     bool hasIncompatibleLicenseTypeAndSplashScreenSetting() const;
+    bool isFileModificationCheckPending() const;
     bool isSaveAndExportDisabled() const;
 
 private:
@@ -515,6 +526,7 @@ private:
     struct ProjectFileModificationPoller  : private Timer
     {
         ProjectFileModificationPoller (Project& p);
+        bool isCheckPending() const noexcept  { return pending; }
 
     private:
         void timerCallback() override;
@@ -524,24 +536,23 @@ private:
         void reloadProjectFromDisk();
 
         Project& project;
-        bool showingWarning = false;
+        bool pending = false;
     };
 
     //==============================================================================
     ValueTree projectRoot  { Ids::JUCERPROJECT };
 
-    ValueWithDefault projectNameValue, projectUIDValue, projectLineFeedValue, projectTypeValue, versionValue, bundleIdentifierValue, companyNameValue,
-                     companyCopyrightValue, companyWebsiteValue, companyEmailValue, displaySplashScreenValue, splashScreenColourValue, cppStandardValue,
-                     headerSearchPathsValue, preprocessorDefsValue, userNotesValue, maxBinaryFileSizeValue, includeBinaryDataInJuceHeaderValue, binaryDataNamespaceValue,
-                     compilerFlagSchemesValue, postExportShellCommandPosixValue, postExportShellCommandWinValue, useAppConfigValue, addUsingNamespaceToJuceHeader;
+    ValueTreePropertyWithDefault projectNameValue, projectUIDValue, projectLineFeedValue, projectTypeValue, versionValue, bundleIdentifierValue, companyNameValue,
+                                 companyCopyrightValue, companyWebsiteValue, companyEmailValue, displaySplashScreenValue, splashScreenColourValue, cppStandardValue,
+                                 headerSearchPathsValue, preprocessorDefsValue, userNotesValue, maxBinaryFileSizeValue, includeBinaryDataInJuceHeaderValue, binaryDataNamespaceValue,
+                                 compilerFlagSchemesValue, postExportShellCommandPosixValue, postExportShellCommandWinValue, useAppConfigValue, addUsingNamespaceToJuceHeader;
 
-    ValueWithDefault pluginFormatsValue, pluginNameValue, pluginDescriptionValue, pluginManufacturerValue, pluginManufacturerCodeValue,
-                     pluginCodeValue, pluginChannelConfigsValue, pluginCharacteristicsValue, pluginAUExportPrefixValue, pluginAAXIdentifierValue,
-                     pluginAUMainTypeValue, pluginAUSandboxSafeValue, pluginRTASCategoryValue, pluginVSTCategoryValue, pluginVST3CategoryValue, pluginAAXCategoryValue,
-                     pluginVSTNumMidiInputsValue, pluginVSTNumMidiOutputsValue;
+    ValueTreePropertyWithDefault pluginFormatsValue, pluginNameValue, pluginDescriptionValue, pluginManufacturerValue, pluginManufacturerCodeValue,
+                                 pluginCodeValue, pluginChannelConfigsValue, pluginCharacteristicsValue, pluginAUExportPrefixValue, pluginAAXIdentifierValue,
+                                 pluginAUMainTypeValue, pluginAUSandboxSafeValue, pluginRTASCategoryValue, pluginVSTCategoryValue, pluginVST3CategoryValue, pluginAAXCategoryValue,
+                                 pluginVSTNumMidiInputsValue, pluginVSTNumMidiOutputsValue;
 
     //==============================================================================
-    std::unique_ptr<CompileEngineSettings> compileEngineSettings;
     std::unique_ptr<EnabledModulesList> enabledModulesList;
 
     AvailableModulesList exporterPathsModulesList;
@@ -567,11 +578,8 @@ private:
     File tempDirectory;
     std::pair<Time, String> cachedFileState;
 
-    void saveAndMoveTemporaryProject (bool openInIDE);
-
     //==============================================================================
     friend class Item;
-    bool isSaving = false;
     StringPairArray parsedPreprocessorDefs;
 
     //==============================================================================
@@ -604,9 +612,11 @@ private:
     void updateJUCEPathWarning();
 
     void updateModuleWarnings();
+    void updateExporterWarnings();
     void updateCppStandardWarning (bool showWarning);
     void updateMissingModuleDependenciesWarning (bool showWarning);
     void updateOldProjucerWarning (bool showWarning);
+    void updateCLionWarning (bool showWarning);
     void updateModuleNotFoundWarning (bool showWarning);
 
     ValueTree projectMessages { ProjectMessages::Ids::projectMessages, {},
@@ -615,6 +625,10 @@ private:
 
     ProjectFileModificationPoller fileModificationPoller { *this };
 
+    std::unique_ptr<FileChooser> chooser;
+    std::unique_ptr<ProjectSaver> saver;
+
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Project)
+    JUCE_DECLARE_WEAK_REFERENCEABLE (Project)
 };

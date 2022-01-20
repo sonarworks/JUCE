@@ -28,27 +28,26 @@ namespace juce
 
 const int kilobytesPerSecond1x = 176;
 
-struct AudioTrackProducerClass  : public ObjCClass <NSObject>
+struct AudioTrackProducerClass  : public ObjCClass<NSObject>
 {
-    AudioTrackProducerClass()  : ObjCClass <NSObject> ("JUCEAudioTrackProducer_")
+    AudioTrackProducerClass()  : ObjCClass<NSObject> ("JUCEAudioTrackProducer_")
     {
         addIvar<AudioSourceHolder*> ("source");
 
         JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wundeclared-selector")
-        addMethod (@selector (initWithAudioSourceHolder:),     initWithAudioSourceHolder,     "@@:^v");
-        addMethod (@selector (verifyDataForTrack:intoBuffer:length:atAddress:blockSize:ioFlags:),
-                   produceDataForTrack,           "I@:@^cIQI^I");
+        addMethod (@selector (initWithAudioSourceHolder:),     initWithAudioSourceHolder);
+        addMethod (@selector (verifyDataForTrack:intoBuffer:length:atAddress:blockSize:ioFlags:), produceDataForTrack);
         JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
-        addMethod (@selector (cleanupTrackAfterBurn:),         cleanupTrackAfterBurn,         "v@:@");
-        addMethod (@selector (cleanupTrackAfterVerification:), cleanupTrackAfterVerification, "c@:@");
-        addMethod (@selector (estimateLengthOfTrack:),         estimateLengthOfTrack,         "Q@:@");
-        addMethod (@selector (prepareTrack:forBurn:toMedia:),  prepareTrack,                  "c@:@@@");
-        addMethod (@selector (prepareTrackForVerification:),   prepareTrackForVerification,   "c@:@");
+        addMethod (@selector (cleanupTrackAfterBurn:),         cleanupTrackAfterBurn);
+        addMethod (@selector (cleanupTrackAfterVerification:), cleanupTrackAfterVerification);
+        addMethod (@selector (estimateLengthOfTrack:),         estimateLengthOfTrack);
+        addMethod (@selector (prepareTrack:forBurn:toMedia:),  prepareTrack);
+        addMethod (@selector (prepareTrackForVerification:),   prepareTrackForVerification);
         addMethod (@selector (produceDataForTrack:intoBuffer:length:atAddress:blockSize:ioFlags:),
-                                                               produceDataForTrack,           "I@:@^cIQI^I");
+                                                               produceDataForTrack);
         addMethod (@selector (producePreGapForTrack:intoBuffer:length:atAddress:blockSize:ioFlags:),
-                                                               produceDataForTrack,           "I@:@^cIQI^I");
+                                                               produceDataForTrack);
 
         registerClass();
     }
@@ -73,7 +72,7 @@ struct AudioTrackProducerClass  : public ObjCClass <NSObject>
 private:
     static id initWithAudioSourceHolder (id self, SEL, AudioSourceHolder* source)
     {
-        self = sendSuperclassMessage (self, @selector (init));
+        self = sendSuperclassMessage<id> (self, @selector (init));
         object_setInstanceVariable (self, "source", source);
         return self;
     }
@@ -86,7 +85,7 @@ private:
     static void dealloc (id self, SEL)
     {
         delete getSource (self);
-        sendSuperclassMessage (self, @selector (dealloc));
+        sendSuperclassMessage<void> (self, @selector (dealloc));
     }
 
     static void cleanupTrackAfterBurn (id, SEL, DRTrack*) {}
@@ -132,13 +131,9 @@ private:
 
                 source->source->getNextAudioBlock (info);
 
-                typedef AudioData::Pointer <AudioData::Int16,   AudioData::LittleEndian, AudioData::Interleaved,    AudioData::NonConst> CDSampleFormat;
-                typedef AudioData::Pointer <AudioData::Float32, AudioData::NativeEndian, AudioData::NonInterleaved, AudioData::Const> SourceSampleFormat;
-
-                CDSampleFormat left (buffer, 2);
-                left.convertSamples (SourceSampleFormat (tempBuffer.getReadPointer (0)), numSamples);
-                CDSampleFormat right (buffer + 2, 2);
-                right.convertSamples (SourceSampleFormat (tempBuffer.getReadPointer (1)), numSamples);
+                AudioData::interleaveSamples (AudioData::NonInterleavedSource<AudioData::Float32, AudioData::NativeEndian> { tempBuffer.getArrayOfReadPointers(), 2 },
+                                              AudioData::InterleavedDest<AudioData::Int16, AudioData::LittleEndian>        { reinterpret_cast<uint16*> (buffer),  2 },
+                                              numSamples);
 
                 source->readPosition += numSamples;
             }

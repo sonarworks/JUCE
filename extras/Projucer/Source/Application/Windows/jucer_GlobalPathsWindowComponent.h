@@ -125,15 +125,18 @@ public:
         if (isTimerRunning() || ! isSelectedOSThisOS())
             return;
 
-        PropertyComponent* jucePathPropertyComponent = nullptr;
-
-        for (auto* prop : propertyGroup.properties)
-            if (prop->getName() == "Path to JUCE")
-                jucePathPropertyComponent = prop;
-
-        if (jucePathPropertyComponent != nullptr)
+        const auto findJucePathPropertyComponent = [this]() -> PropertyComponent*
         {
-            boundsToHighlight = getLocalArea (&propertyGroup, jucePathPropertyComponent->getBounds());
+            for (const auto& prop : propertyGroup.getProperties())
+                if (prop->getName() == "Path to JUCE")
+                    return prop.get();
+
+            return nullptr;
+        };
+
+        if (auto* propComponent = findJucePathPropertyComponent())
+        {
+            boundsToHighlight = getLocalArea (nullptr, propComponent->getScreenBounds());
             flashAlpha = 0.0f;
             hasFlashed = false;
 
@@ -233,8 +236,6 @@ private:
 
         builder.add (new FilePathPropertyComponent (androidSDKPathValue, "Android SDK", true, isThisOS),
                      "This path will be used when writing the local.properties file of an Android project and should point to the Android SDK folder.");
-        builder.add (new FilePathPropertyComponent (androidNDKPathValue, "Android NDK", true, isThisOS),
-                     "This path will be used when writing the local.properties file of an Android project and should point to the Android NDK folder.");
 
         if (isThisOS)
         {
@@ -273,7 +274,6 @@ private:
         rtasPathValue             = settings.getStoredPath (Ids::rtasPath, os);
         aaxPathValue              = settings.getStoredPath (Ids::aaxPath, os);
         androidSDKPathValue       = settings.getStoredPath (Ids::androidSDKPath, os);
-        androidNDKPathValue       = settings.getStoredPath (Ids::androidNDKPath, os);
         clionExePathValue         = settings.getStoredPath (Ids::clionExePath, os);
         androidStudioExePathValue = settings.getStoredPath (Ids::androidStudioExePath, os);
     }
@@ -287,7 +287,6 @@ private:
         rtasPathValue            .resetToDefault();
         aaxPathValue             .resetToDefault();
         androidSDKPathValue      .resetToDefault();
-        androidNDKPathValue      .resetToDefault();
         clionExePathValue        .resetToDefault();
         androidStudioExePathValue.resetToDefault();
 
@@ -297,9 +296,9 @@ private:
     //==============================================================================
     Value selectedOSValue;
 
-    ValueWithDefault jucePathValue, juceModulePathValue, userModulePathValue,
-                     vstPathValue, rtasPathValue, aaxPathValue, androidSDKPathValue, androidNDKPathValue,
-                     clionExePathValue, androidStudioExePathValue;
+    ValueTreePropertyWithDefault jucePathValue, juceModulePathValue, userModulePathValue,
+                                 vstPathValue, rtasPathValue, aaxPathValue, androidSDKPathValue,
+                                 clionExePathValue, androidStudioExePathValue;
 
     Viewport propertyViewport;
     PropertyGroupComponent propertyGroup  { "Global Paths", { getIcons().openFolder, Colours::transparentBlack } };
