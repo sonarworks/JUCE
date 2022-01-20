@@ -289,8 +289,8 @@ public:
         std::string errorDescription;
         if (error)
         {
-            errorDescription = [NSString stringWithFormat:@"(error code: %@, failure reason: %@, description: %@, recovery suggestion: %@)",
-                                nsUrlErrorCode, error.localizedFailureReason, error.localizedDescription, error.localizedRecoverySuggestion].UTF8String;
+            errorDescription = [NSString stringWithFormat:@"(error code: %lu, failure reason: %@, description: %@, recovery suggestion: %@)",
+                                static_cast<long>(error.code), error.localizedFailureReason, error.localizedDescription, error.localizedRecoverySuggestion].UTF8String;
         }
         Logger::writeToLog(String::formatted("URLConnectionState::didFailWithError() invoked with error %p %s", error, errorDescription.empty() ? "()" : errorDescription.c_str()));
         hasFailed = true;
@@ -353,7 +353,7 @@ private:
                                                                    connectionDidSendBodyData);
             addMethod (@selector (connectionDidFinishLoading:),    connectionDidFinishLoading);
             addMethod (@selector (connection:willSendRequest:redirectResponse:), willSendRequest);
-            addMethod (@selector (connection:canAuthenticateAgainstProtectionSpace:), canAuthenticateAgainstProtectionSpace, "@@:@@");
+            addMethod (@selector (connection:canAuthenticateAgainstProtectionSpace:), canAuthenticateAgainstProtectionSpace);
 
             registerClass();
         }
@@ -391,7 +391,7 @@ private:
         {
             getState (self)->finishedLoading();
         }
-        static bool canAuthenticateAgainstProtectionSpace (NSURLConnection * connection, NSURLProtectionSpace * protectionSpace)
+        static bool canAuthenticateAgainstProtectionSpace (id self, SEL, NSURLConnection*, NSURLProtectionSpace*)
         {
             return true;
         }
