@@ -196,6 +196,30 @@ public:
     */
     static AudioChannelSet JUCE_CALLTYPE create7point1SDDS();
 
+    /** Creates a set for Dolby Atmos 2.1.2 surround setup (left, right, LFE, topSideLeft, topSideRight).
+
+        Is equivalent to: kCineFront (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create2point1point2();
+
+    /** Creates a set for Dolby Atmos 3.1 surround setup (left, right, center, LFE).
+
+        Is equivalent to: k31Cine (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create3point1();
+
+    /** Creates a set for Dolby Atmos 4.1 surround setup (left, right, leftSurroundRear, rightSurroundRear, LFE, topSideLeft, topSideRight).
+
+        Is equivalent to: k41Music (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create4point1();
+
+    /** Creates a set for Dolby Atmos 4.1.4 surround setup (left, right, leftSurroundRear, rightSurroundRear, LFE, topFrontLeft, topFrontRight, topRearLeft, topRearRight).
+
+        Is equivalent to: k81MPEG3D (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create4point1point4();
+
     /** Creates a set for a 5.1.2 surround setup (left, right, centre, LFE, leftSurround, rightSurround, topSideLeft, topSideRight).
 
         Is equivalent to: kAudioChannelLayoutTag_Atmos_5_1_2 (CoreAudio).
@@ -237,6 +261,18 @@ public:
         Is equivalent to: k71_6 (VST), n/a (AAX), n/a (CoreAudio)
     */
     static AudioChannelSet JUCE_CALLTYPE create7point1point6();
+
+    /** Creates a set for Dolby Atmos 9.1.2 surround setup (left, right, centre, leftSurroundSide, rightSurroundSide, leftSurroundRear, rightSurroundRear, LFE, topFrontLeft, topFrontRight, topRearLeft, topRearRight).
+
+        Is equivalent to: k71_4 (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create9point1point2();
+
+    /** Creates a set for Dolby Atmos 9.1.4 surround setup (left, right, centre, leftSurroundSide, rightSurroundSide, leftSurroundRear, rightSurroundRear, LFE, topSideLeft, topSideRight).
+
+       Is equivalent to: k91_4 (VST), n/a (AAX), n/a (CoreAudio)
+    */
+    static AudioChannelSet JUCE_CALLTYPE create9point1point4();
 
     /** Creates a set for a 9.1.6 surround setup (left, right, centre, LFE, leftSurroundSide, rightSurroundSide, leftSurroundRear, rightSurroundRear, wideLeft, wideRight, topFrontLeft, topFrontRight, topSideLeft, topSideRight, topRearLeft, topRearRight).
 

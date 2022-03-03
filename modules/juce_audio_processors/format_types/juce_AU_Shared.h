@@ -358,7 +358,7 @@ struct AudioUnitHelpers
         }
 
         auto layout = processor.getBusesLayout();
-        auto maxNumChanToCheckFor = 9;
+        auto maxNumChanToCheckFor = 16;
 
         auto defaultInputs  = processor.getChannelCountOfBus (true,  0);
         auto defaultOutputs = processor.getChannelCountOfBus (false, 0);

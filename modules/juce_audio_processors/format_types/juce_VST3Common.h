@@ -358,6 +358,8 @@ static Steinberg::Vst::SpeakerArrangement getVst3SpeakerArrangement (const Audio
     if (channels == AudioChannelSet::createLCR())           return k30Cine;
     if (channels == AudioChannelSet::createLRS())           return k30Music;
     if (channels == AudioChannelSet::createLCRS())          return k40Cine;
+    if (channels == AudioChannelSet::create3point1())       return k31Cine;
+    if (channels == AudioChannelSet::create4point1())       return k41Music;
     if (channels == AudioChannelSet::create5point0())       return k50;
     if (channels == AudioChannelSet::create5point1())       return k51;
     if (channels == AudioChannelSet::create6point0())       return k60Cine;
@@ -370,12 +372,15 @@ static Steinberg::Vst::SpeakerArrangement getVst3SpeakerArrangement (const Audio
     if (channels == AudioChannelSet::create7point1SDDS())   return k71Cine;
     if (channels == AudioChannelSet::ambisonic())           return kAmbi1stOrderACN;
     if (channels == AudioChannelSet::quadraphonic())        return k40Music;
+    if (channels == AudioChannelSet::create2point1point2()) return kCineFront;
+    if (channels == AudioChannelSet::create4point1point4()) return k81MPEG3D;
     if (channels == AudioChannelSet::create5point1point4()) return k51_4;
     if (channels == AudioChannelSet::create7point0point2()) return k71_2 & ~(Steinberg::Vst::kSpeakerLfe);
     if (channels == AudioChannelSet::create7point1point2()) return k71_2;
     if (channels == AudioChannelSet::create7point0point4()) return k71_4 & ~(Steinberg::Vst::kSpeakerLfe);
     if (channels == AudioChannelSet::create7point1point4()) return k71_4;
     if (channels == AudioChannelSet::create7point1point6()) return k71_6;
+    if (channels == AudioChannelSet::create9point1point4()) return k91_4;
     if (channels == AudioChannelSet::create9point1point6()) return k91_6;
     if (channels == AudioChannelSet::ambisonic (0))         return (1ull << 20);
     if (channels == AudioChannelSet::ambisonic (1))         return (1ull << 20) | (1ull << 21) | (1ull << 22) | (1ull << 23);
@@ -402,10 +407,13 @@ static AudioChannelSet getChannelSetForSpeakerArrangement (Steinberg::Vst::Speak
         case kMono:                                           return AudioChannelSet::mono();
         case kStereo:                                         return AudioChannelSet::stereo();
         case k30Cine:                                         return AudioChannelSet::createLCR();
+        case kCineFront:                                      return AudioChannelSet::create2point1point2();
+        case k31Cine:                                         return AudioChannelSet::create3point1();
         case k30Music:                                        return AudioChannelSet::createLRS();
         case k40Cine:                                         return AudioChannelSet::createLCRS();
         case k50:                                             return AudioChannelSet::create5point0();
         case k51:                                             return AudioChannelSet::create5point1();
+        case k51_4:                                           return AudioChannelSet::create5point1point4();
         case k60Cine:                                         return AudioChannelSet::create6point0();
         case k61Cine:                                         return AudioChannelSet::create6point1();
         case k60Music:                                        return AudioChannelSet::create6point0Music();
@@ -415,11 +423,15 @@ static AudioChannelSet getChannelSetForSpeakerArrangement (Steinberg::Vst::Speak
         case k71CineSideFill:                                 return AudioChannelSet::create7point1();
         case k71Cine:                                         return AudioChannelSet::create7point1SDDS();
         case k40Music:                                        return AudioChannelSet::quadraphonic();
+        case k41Music:                                        return AudioChannelSet::create4point1();
+        case k81MPEG3D:                                       return AudioChannelSet::create4point1point4();
         case k71_2:                                           return AudioChannelSet::create7point1point2();
         case k71_2 & ~(Steinberg::Vst::kSpeakerLfe):          return AudioChannelSet::create7point0point2();
         case k71_4:                                           return AudioChannelSet::create7point1point4();
         case k71_4 & ~(Steinberg::Vst::kSpeakerLfe):          return AudioChannelSet::create7point0point4();
         case k71_6:                                           return AudioChannelSet::create7point1point6();
+        case k91_4:                                           return AudioChannelSet::create9point1point4();
+        case k91_6:                                           return AudioChannelSet::create9point1point6();
         case (1 << 20):                                       return AudioChannelSet::ambisonic (0);
         case kAmbi1stOrderACN:                                return AudioChannelSet::ambisonic (1);
        #if VST_VERSION >= 0x030608
