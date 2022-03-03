@@ -289,6 +289,15 @@ static Steinberg::Vst::SpeakerArrangement getVst3SpeakerArrangement (const Audio
     else if (channels == AudioChannelSet::quadraphonic())        return k40Music;
     else if (channels == AudioChannelSet::create7point0point2()) return k71_2 & ~(Steinberg::Vst::kSpeakerLfe);
     else if (channels == AudioChannelSet::create7point1point2()) return k71_2;
+    else if (channels == AudioChannelSet::create3point1())       return k31Cine;
+    else if (channels == AudioChannelSet::create2point1point2()) return kCineFront;
+    else if (channels == AudioChannelSet::create4point1())       return k41Music;
+    else if (channels == AudioChannelSet::create5point1point4()) return k51_4;
+    else if (channels == AudioChannelSet::create4point1point4()) return k81MPEG3D;
+    else if (channels == AudioChannelSet::create7point1point4()) return k71_4;
+    else if (channels == AudioChannelSet::create7point1point6()) return k71_6;
+    else if (channels == AudioChannelSet::create9point1point4()) return k91_4;
+    else if (channels == AudioChannelSet::create9point1point6()) return k91_6;
     else if (channels == AudioChannelSet::ambisonic (0))         return (1ull << 20);
     else if (channels == AudioChannelSet::ambisonic (1))         return (1ull << 20) | (1ull << 21) | (1ull << 22) | (1ull << 23);
    #if VST_VERSION >= 0x030608
@@ -314,6 +323,7 @@ static AudioChannelSet getChannelSetForSpeakerArrangement (Steinberg::Vst::Speak
     else if (arr == kMono)                                           return AudioChannelSet::mono();
     else if (arr == kStereo)                                         return AudioChannelSet::stereo();
     else if (arr == k30Cine)                                         return AudioChannelSet::createLCR();
+    else if (arr == k31Cine)                                         return AudioChannelSet::create3point1();
     else if (arr == k30Music)                                        return AudioChannelSet::createLRS();
     else if (arr == k40Cine)                                         return AudioChannelSet::createLCRS();
     else if (arr == k50)                                             return AudioChannelSet::create5point0();
@@ -326,6 +336,14 @@ static AudioChannelSet getChannelSetForSpeakerArrangement (Steinberg::Vst::Speak
     else if (arr == k70Cine)                                         return AudioChannelSet::create7point0SDDS();
     else if (arr == k71CineSideFill)                                 return AudioChannelSet::create7point1();
     else if (arr == k71Cine)                                         return AudioChannelSet::create7point1SDDS();
+    else if (arr == kCineFront)                                      return AudioChannelSet::create2point1point2();
+    else if (arr == k41Music)                                        return AudioChannelSet::create4point1();
+    else if (arr == k81MPEG3D)                                       return AudioChannelSet::create4point1point4();
+    else if (arr == k71_4)                                           return AudioChannelSet::create7point1point4();
+    else if (arr == k71_6)                                           return AudioChannelSet::create7point1point6();
+    else if (arr == k91_4)                                           return AudioChannelSet::create9point1point4();
+    else if (arr == k91_6)                                           return AudioChannelSet::create9point1point6();
+    else if (arr == k51_4)                                           return AudioChannelSet::create5point1point4();
     else if (arr == kAmbi1stOrderACN)                                return AudioChannelSet::ambisonic();
     else if (arr == k40Music)                                        return AudioChannelSet::quadraphonic();
     else if (arr == k71_2)                                           return AudioChannelSet::create7point1point2();
