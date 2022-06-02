@@ -1535,7 +1535,7 @@ namespace AAXClasses
                 if (pluginInstance != nullptr)
                     pluginInstance->setIsDawBypass(bypass);
 
-                if (bypass)
+                if (bypass && pluginInstance->getBypassParameter() == nullptr)
                     pluginInstance->processBlockBypassed (buffer, midiBuffer);
                 else
                     pluginInstance->processBlock (buffer, midiBuffer);
