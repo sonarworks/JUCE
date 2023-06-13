@@ -2,15 +2,15 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    JUCE is an open source library subject to commercial or open-source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 6 End-User License
-   Agreement and JUCE Privacy Policy (both effective as of the 16th June 2020).
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
    Privacy Policy: www.juce.com/juce-privacy-policy
 
    Or: You may also use this code under the terms of the GPL v3 (see
@@ -353,12 +353,10 @@ void LookAndFeel_V4::drawToggleButton (Graphics& g, ToggleButton& button,
 void LookAndFeel_V4::drawTickBox (Graphics& g, Component& component,
                                   float x, float y, float w, float h,
                                   const bool ticked,
-                                  const bool isEnabled,
-                                  const bool shouldDrawButtonAsHighlighted,
-                                  const bool shouldDrawButtonAsDown)
+                                  [[maybe_unused]] const bool isEnabled,
+                                  [[maybe_unused]] const bool shouldDrawButtonAsHighlighted,
+                                  [[maybe_unused]] const bool shouldDrawButtonAsDown)
 {
-    ignoreUnused (isEnabled, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
-
     Rectangle<float> tickBounds (x, y, w, h);
 
     g.setColour (component.findColour (ToggleButton::tickDisabledColourId));
@@ -619,10 +617,8 @@ int LookAndFeel_V4::getDefaultScrollbarWidth()
 }
 
 void LookAndFeel_V4::drawScrollbar (Graphics& g, ScrollBar& scrollbar, int x, int y, int width, int height,
-                                    bool isScrollbarVertical, int thumbStartPosition, int thumbSize, bool isMouseOver, bool isMouseDown)
+                                    bool isScrollbarVertical, int thumbStartPosition, int thumbSize, bool isMouseOver, [[maybe_unused]] bool isMouseDown)
 {
-    ignoreUnused (isMouseDown);
-
     Rectangle<int> thumbBounds;
 
     if (isScrollbarVertical)
@@ -1253,10 +1249,8 @@ void LookAndFeel_V4::drawPropertyComponentBackground (Graphics& g, int width, in
     g.fillRect  (0, 0, width, height - 1);
 }
 
-void LookAndFeel_V4::drawPropertyComponentLabel (Graphics& g, int width, int height, PropertyComponent& component)
+void LookAndFeel_V4::drawPropertyComponentLabel (Graphics& g, [[maybe_unused]] int width, int height, PropertyComponent& component)
 {
-    ignoreUnused (width);
-
     auto indent = getPropertyComponentIndent (component);
 
     g.setColour (component.findColour (PropertyComponent::labelTextColourId)

@@ -2,15 +2,15 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    JUCE is an open source library subject to commercial or open-source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 6 End-User License
-   Agreement and JUCE Privacy Policy (both effective as of the 16th June 2020).
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
    Privacy Policy: www.juce.com/juce-privacy-policy
 
    Or: You may also use this code under the terms of the GPL v3 (see
@@ -361,10 +361,8 @@ namespace X11ErrorHandling
         return 0;
     }
 
-    static int errorHandler (::Display* display, XErrorEvent* event)
+    static int errorHandler ([[maybe_unused]] ::Display* display, [[maybe_unused]] XErrorEvent* event)
     {
-        ignoreUnused (display, event);
-
        #if JUCE_DEBUG_XERRORS
         char errorStr[64]   = { 0 };
         char requestStr[64] = { 0 };
@@ -413,6 +411,31 @@ namespace Keys
     static bool capsLock = false;
     static char keyStates [32];
     static constexpr int extendedKeyModifier = 0x10000000;
+    static bool modifierKeysAreStale = false;
+
+    static void refreshStaleModifierKeys()
+    {
+        if (modifierKeysAreStale)
+        {
+            XWindowSystem::getInstance()->getNativeRealtimeModifiers();
+            modifierKeysAreStale = false;
+        }
+    }
+
+    // Call this function when only the mouse keys need to be refreshed e.g. when the event
+    // parameter already has information about the keys.
+    static void refreshStaleMouseKeys()
+    {
+        if (modifierKeysAreStale)
+        {
+            const auto oldMods = ModifierKeys::currentModifiers;
+            XWindowSystem::getInstance()->getNativeRealtimeModifiers();
+            ModifierKeys::currentModifiers = oldMods.withoutMouseButtons()
+                                                    .withFlags (ModifierKeys::currentModifiers.withOnlyMouseButtons()
+                                                                                              .getRawFlags());
+            modifierKeysAreStale = false;
+        }
+    }
 }
 
 const int KeyPress::spaceKey              = XK_space         & 0xff;
@@ -566,6 +589,7 @@ enum
  {
      static int trappedErrorCode = 0;
 
+     extern "C" int errorTrapHandler (Display*, XErrorEvent* err);
      extern "C" int errorTrapHandler (Display*, XErrorEvent* err)
      {
          trappedErrorCode = err->error_code;
@@ -1408,15 +1432,21 @@ ComponentPeer* getPeerFor (::Window windowH)
     if (windowH == 0)
         return nullptr;
 
-    XPointer peer = nullptr;
-
     if (auto* display = XWindowSystem::getInstance()->getDisplay())
     {
         XWindowSystemUtilities::ScopedXLock xLock;
-        X11Symbols::getInstance()->xFindContext (display, (XID) windowH, windowHandleXContext, &peer);
+
+        if (XPointer peer = nullptr;
+            X11Symbols::getInstance()->xFindContext (display,
+                                                     static_cast<XID> (windowH),
+                                                     windowHandleXContext,
+                                                     &peer) == 0)
+        {
+            return unalignedPointerCast<ComponentPeer*> (peer);
+        }
     }
 
-    return unalignedPointerCast<ComponentPeer*> (peer);
+    return nullptr;
 }
 
 //==============================================================================
@@ -1519,7 +1549,7 @@ static int getAllEventsMask (bool ignoresMouseClicks)
                                                              &swa);
 
     // Set the window context to identify the window handle object
-    if (X11Symbols::getInstance()->xSaveContext (display, (XID) windowH, windowHandleXContext, (XPointer) peer))
+    if (! peer->setWindowAssociation (windowH))
     {
         // Failed
         jassertfalse;
@@ -1601,10 +1631,7 @@ void XWindowSystem::destroyWindow (::Window windowH)
 
     XWindowSystemUtilities::ScopedXLock xLock;
 
-    XPointer handlePointer;
-
-    if (! X11Symbols::getInstance()->xFindContext (display, (XID) windowH, windowHandleXContext, &handlePointer))
-        X11Symbols::getInstance()->xDeleteContext (display, (XID) windowH, windowHandleXContext);
+    peer->clearWindowAssociation();
 
     X11Symbols::getInstance()->xDestroyWindow (display, windowH);
 
@@ -1746,17 +1773,17 @@ void XWindowSystem::setBounds (::Window windowH, Rectangle<int> newBounds, bool 
             X11Symbols::getInstance()->xSetWMNormalHints (display, windowH, hints.get());
         }
 
-        const auto windowBorder = [&]() -> BorderSize<int>
+        const auto nativeWindowBorder = [&]() -> BorderSize<int>
         {
             if (const auto& frameSize = peer->getFrameSizeIfPresent())
-                return *frameSize;
+                return frameSize->multipliedBy (peer->getPlatformScaleFactor());
 
             return {};
         }();
 
         X11Symbols::getInstance()->xMoveResizeWindow (display, windowH,
-                                                      newBounds.getX() - windowBorder.getLeft(),
-                                                      newBounds.getY() - windowBorder.getTop(),
+                                                      newBounds.getX() - nativeWindowBorder.getLeft(),
+                                                      newBounds.getY() - nativeWindowBorder.getTop(),
                                                       (unsigned int) newBounds.getWidth(),
                                                       (unsigned int) newBounds.getHeight());
     }
@@ -1870,7 +1897,9 @@ Rectangle<int> XWindowSystem::getWindowBounds (::Window windowH, ::Window parent
         }
         else
         {
-            parentScreenPosition = Point<int> (rootX, rootY);
+            // XGetGeometry returns wx and wy relative to the parent window's origin.
+            // XTranslateCoordinates returns rootX and rootY relative to the root window.
+            parentScreenPosition = Point<int> (rootX - wx, rootY - wy);
         }
     }
 
@@ -2445,6 +2474,18 @@ ModifierKeys XWindowSystem::getNativeRealtimeModifiers() const
 
     ModifierKeys::currentModifiers = ModifierKeys::currentModifiers.withoutMouseButtons().withFlags (mouseMods);
 
+    // We are keeping track of the state of modifier keys and mouse buttons with the assumption that
+    // for every mouse down we are going to receive a mouse up etc.
+    //
+    // This assumption is broken when getNativeRealtimeModifiers() is called. If for example we call
+    // this function when the mouse cursor is in another application and the mouse button happens to
+    // be down, then its represented state in currentModifiers may remain down indefinitely, since
+    // we aren't going to receive an event when it's released.
+    //
+    // We mark this state in this variable, and we can restore synchronization when our window
+    // receives an event again.
+    Keys::modifierKeysAreStale = true;
+
     return ModifierKeys::currentModifiers;
 }
 
@@ -2524,6 +2565,22 @@ Array<Displays::Display> XWindowSystem::findDisplays (float masterScale) const
                                         d.totalArea = { crtc->x, crtc->y, (int) crtc->width, (int) crtc->height };
                                         d.isMain = (mainDisplay == screens->outputs[j]) && (i == 0);
                                         d.dpi = DisplayHelpers::getDisplayDPI (display, 0);
+
+                                        d.verticalFrequencyHz = [&]() -> std::optional<double>
+                                        {
+                                            if (crtc->mode != None)
+                                            {
+                                                if (auto it = std::find_if (screens->modes,
+                                                                            screens->modes + screens->nmode,
+                                                                            [&crtc] (const auto& m) { return m.id == crtc->mode; });
+                                                    it != screens->modes + screens->nmode)
+                                                {
+                                                    return (double) it->dotClock / ((double) it->hTotal * (double) it->vTotal);
+                                                }
+                                            }
+
+                                            return {};
+                                        }();
 
                                         // The raspberry pi returns a zero sized display, so we need to guard for divide-by-zero
                                         if (output->mm_width > 0 && output->mm_height > 0)
@@ -2626,7 +2683,7 @@ Array<Displays::Display> XWindowSystem::findDisplays (float masterScale) const
     return displays;
 }
 
-::Window XWindowSystem::createKeyProxy (::Window windowH) const
+::Window XWindowSystem::createKeyProxy (::Window windowH)
 {
     jassert (windowH != 0);
 
@@ -2640,7 +2697,6 @@ Array<Displays::Display> XWindowSystem::findDisplays (float masterScale) const
                                                               &swa);
 
     X11Symbols::getInstance()->xMapWindow (display, keyProxy);
-    X11Symbols::getInstance()->xSaveContext (display, (XID) keyProxy, windowHandleXContext, (XPointer) this);
 
     return keyProxy;
 }
@@ -2648,11 +2704,6 @@ Array<Displays::Display> XWindowSystem::findDisplays (float masterScale) const
 void XWindowSystem::deleteKeyProxy (::Window keyProxy) const
 {
     jassert (keyProxy != 0);
-
-    XPointer handlePointer;
-
-    if (! X11Symbols::getInstance()->xFindContext (display, (XID) keyProxy, windowHandleXContext, &handlePointer))
-          X11Symbols::getInstance()->xDeleteContext (display, (XID) keyProxy, windowHandleXContext);
 
     X11Symbols::getInstance()->xDestroyWindow (display, keyProxy);
     X11Symbols::getInstance()->xSync (display, false);
@@ -3089,6 +3140,12 @@ XWindowSystem::VisualAndDepth XWindowSystem::DisplayVisuals::getBestVisualForWin
     if (visual24Bit != nullptr)
         return { visual24Bit, 24 };
 
+    if (visual32Bit != nullptr)
+        return { visual32Bit, 32 };
+
+    // No visual available!
+    jassert (visual16Bit != nullptr);
+
     return { visual16Bit, 16 };
 }
 
@@ -3220,11 +3277,13 @@ void XWindowSystem::destroyXDisplay()
 }
 
 //==============================================================================
+::Window juce_createKeyProxyWindow (ComponentPeer* peer);
 ::Window juce_createKeyProxyWindow (ComponentPeer* peer)
 {
     return XWindowSystem::getInstance()->createKeyProxy ((::Window) peer->getNativeHandle());
 }
 
+void juce_deleteKeyProxyWindow (::Window keyProxy);
 void juce_deleteKeyProxyWindow (::Window keyProxy)
 {
     XWindowSystem::getInstance()->deleteKeyProxy (keyProxy);
@@ -3305,6 +3364,7 @@ void XWindowSystem::handleWindowMessage (LinuxComponentPeer* peer, XEvent& event
 void XWindowSystem::handleKeyPressEvent (LinuxComponentPeer* peer, XKeyEvent& keyEvent) const
 {
     auto oldMods = ModifierKeys::currentModifiers;
+    Keys::refreshStaleModifierKeys();
 
     char utf8 [64] = { 0 };
     juce_wchar unicodeChar = 0;
@@ -3535,6 +3595,7 @@ void XWindowSystem::handleButtonReleaseEvent (LinuxComponentPeer* peer, const XB
 void XWindowSystem::handleMotionNotifyEvent (LinuxComponentPeer* peer, const XPointerMovedEvent& movedEvent) const
 {
     updateKeyModifiers ((int) movedEvent.state);
+    Keys::refreshStaleMouseKeys();
 
     auto& dragState = dragAndDropStateMap[peer];
 

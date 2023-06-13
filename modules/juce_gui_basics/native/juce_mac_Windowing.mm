@@ -2,15 +2,15 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    JUCE is an open source library subject to commercial or open-source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 6 End-User License
-   Agreement and JUCE Privacy Policy (both effective as of the 16th June 2020).
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
    Privacy Policy: www.juce.com/juce-privacy-policy
 
    Or: You may also use this code under the terms of the GPL v3 (see
@@ -446,13 +446,43 @@ Point<float> MouseInputSource::getCurrentRawMousePosition()
     }
 }
 
+static ComponentPeer* findPeerContainingPoint (Point<float> globalPos)
+{
+    for (int i = 0; i < juce::ComponentPeer::getNumPeers(); ++i)
+    {
+        auto* peer = juce::ComponentPeer::getPeer (i);
+
+        if (peer->contains (peer->globalToLocal (globalPos).toInt(), false))
+            return peer;
+    }
+
+    return nullptr;
+}
+
 void MouseInputSource::setRawMousePosition (Point<float> newPosition)
 {
+    const auto oldPosition = Desktop::getInstance().getMainMouseSource().getRawScreenPosition();
+
     // this rubbish needs to be done around the warp call, to avoid causing a
     // bizarre glitch..
     CGAssociateMouseAndMouseCursorPosition (false);
     CGWarpMouseCursorPosition (convertToCGPoint (newPosition));
     CGAssociateMouseAndMouseCursorPosition (true);
+
+    // Mouse enter and exit events seem to be always generated as a consequence of programmatically
+    // moving the mouse. However, when the mouse stays within the same peer no mouse move event is
+    // generated, and we lose track of the correct Component under the mouse. Hence, we need to
+    // generate this missing event here.
+    if (auto* peer = findPeerContainingPoint (newPosition); peer != nullptr
+                                                            && peer == findPeerContainingPoint (oldPosition))
+    {
+        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse,
+                                peer->globalToLocal (newPosition),
+                                ModifierKeys::currentModifiers,
+                                0.0f,
+                                0.0f,
+                                Time::currentTimeMillis());
+    }
 }
 
 double Desktop::getDefaultMasterScale()
@@ -471,34 +501,23 @@ bool Desktop::isDarkModeActive() const
                 isEqualToString: nsStringLiteral ("Dark")];
 }
 
+JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wundeclared-selector")
+static const auto darkModeSelector = @selector (darkModeChanged:);
+static const auto keyboardVisibilitySelector = @selector (keyboardVisiblityChanged:);
+JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+
 class Desktop::NativeDarkModeChangeDetectorImpl
 {
 public:
     NativeDarkModeChangeDetectorImpl()
     {
         static DelegateClass delegateClass;
-
-        delegate = [delegateClass.createInstance() init];
-        object_setInstanceVariable (delegate, "owner", this);
-
-        JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wundeclared-selector")
-        [[NSDistributedNotificationCenter defaultCenter] addObserver: delegate
-                                                            selector: @selector (darkModeChanged:)
-                                                                name: @"AppleInterfaceThemeChangedNotification"
-                                                              object: nil];
-        JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-    }
-
-    ~NativeDarkModeChangeDetectorImpl()
-    {
-        object_setInstanceVariable (delegate, "owner", nullptr);
-        [[NSDistributedNotificationCenter defaultCenter] removeObserver: delegate];
-        [delegate release];
-    }
-
-    void darkModeChanged()
-    {
-        Desktop::getInstance().darkModeChanged();
+        delegate.reset ([delegateClass.createInstance() init]);
+        observer.emplace (delegate.get(),
+                          darkModeSelector,
+                          @"AppleInterfaceThemeChangedNotification",
+                          nil,
+                          [NSDistributedNotificationCenter class]);
     }
 
 private:
@@ -506,23 +525,13 @@ private:
     {
         DelegateClass()  : ObjCClass<NSObject> ("JUCEDelegate_")
         {
-            addIvar<NativeDarkModeChangeDetectorImpl*> ("owner");
-
-            JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wundeclared-selector")
-            addMethod (@selector (darkModeChanged:), darkModeChanged);
-            JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-
+            addMethod (darkModeSelector, [] (id, SEL, NSNotification*) { Desktop::getInstance().darkModeChanged(); });
             registerClass();
-        }
-
-        static void darkModeChanged (id self, SEL, NSNotification*)
-        {
-            if (auto* owner = getIvar<NativeDarkModeChangeDetectorImpl*> (self, "owner"))
-                owner->darkModeChanged();
         }
     };
 
-    id delegate = nil;
+    NSUniquePtr<NSObject> delegate;
+    Optional<ScopedNotificationCenterObserver> observer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NativeDarkModeChangeDetectorImpl)
 };
@@ -559,11 +568,11 @@ public:
     {
         PMAssertion()  : assertionID (kIOPMNullAssertionID)
         {
-            IOReturn res = IOPMAssertionCreateWithName (kIOPMAssertionTypePreventUserIdleDisplaySleep,
-                                                        kIOPMAssertionLevelOn,
-                                                        CFSTR ("JUCE Playback"),
-                                                        &assertionID);
-            jassert (res == kIOReturnSuccess); ignoreUnused (res);
+            [[maybe_unused]] IOReturn res = IOPMAssertionCreateWithName (kIOPMAssertionTypePreventUserIdleDisplaySleep,
+                                                                         kIOPMAssertionLevelOn,
+                                                                         CFSTR ("JUCE Playback"),
+                                                                         &assertionID);
+            jassert (res == kIOReturnSuccess);
         }
 
         ~PMAssertion()
@@ -775,10 +784,9 @@ void Process::setDockIconVisible (bool isVisible)
 {
     ProcessSerialNumber psn { 0, kCurrentProcess };
 
-    OSStatus err = TransformProcessType (&psn, isVisible ? kProcessTransformToForegroundApplication
-                                                         : kProcessTransformToUIElementApplication);
+    [[maybe_unused]] OSStatus err = TransformProcessType (&psn, isVisible ? kProcessTransformToForegroundApplication
+                                                                          : kProcessTransformToUIElementApplication);
     jassert (err == 0);
-    ignoreUnused (err);
 }
 
 } // namespace juce

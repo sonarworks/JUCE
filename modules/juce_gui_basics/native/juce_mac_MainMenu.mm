@@ -2,15 +2,15 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    JUCE is an open source library subject to commercial or open-source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 6 End-User License
-   Agreement and JUCE Privacy Policy (both effective as of the 16th June 2020).
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
    Privacy Policy: www.juce.com/juce-privacy-policy
 
    Or: You may also use this code under the terms of the GPL v3 (see
@@ -293,11 +293,7 @@ public:
 
             [item setTag: topLevelIndex];
             [item setEnabled: i.isEnabled];
-           #if defined (MAC_OS_X_VERSION_10_13) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_13
             [item setState: i.isTicked ? NSControlStateValueOn : NSControlStateValueOff];
-           #else
-            [item setState: i.isTicked ? NSOnState : NSOffState];
-           #endif
             [item setTarget: (id) callback];
 
             auto* juceItem = new PopupMenu::Item (i);
@@ -457,19 +453,12 @@ private:
         {
             ValidatorClass()  : ObjCClass ("JUCEMenuValidator_")
             {
-                addMethod (menuItemInvokedSelector,       menuItemInvoked);
-                addMethod (@selector (validateMenuItem:), validateMenuItem);
-
-               #if defined (MAC_OS_X_VERSION_10_14)
+                addMethod (menuItemInvokedSelector,       [] (id, SEL, NSMenuItem*) {});
+                addMethod (@selector (validateMenuItem:), [] (id, SEL, NSMenuItem*) { return YES; });
                 addProtocol (@protocol (NSMenuItemValidation));
-               #endif
 
                 registerClass();
             }
-
-        private:
-            static BOOL validateMenuItem (id, SEL, NSMenuItem*)      { return YES; }
-            static void menuItemInvoked  (id, SEL, NSMenuItem*)      {}
         };
 
         static ValidatorClass validatorClass;
@@ -511,7 +500,7 @@ private:
         return m;
     }
 
-    // Apple Bug: For some reason [NSMenu removeAllItems] seems to leak it's objects
+    // Apple Bug: For some reason [NSMenu removeAllItems] seems to leak its objects
     // on shutdown, so we need this method to release the items one-by-one manually
     static void removeItemRecursive (NSMenu* parentMenu, int menuItemIndex)
     {
@@ -551,15 +540,27 @@ private:
         {
             addIvar<JuceMainMenuHandler*> ("owner");
 
-            addMethod (menuItemInvokedSelector,       menuItemInvoked);
-            addMethod (@selector (menuNeedsUpdate:),  menuNeedsUpdate);
-            addMethod (@selector (validateMenuItem:), validateMenuItem);
+            addMethod (menuItemInvokedSelector, [] (id self, SEL, NSMenuItem* item)
+            {
+                if (auto* juceItem = getPopupMenuItem (item))
+                    getOwner (self)->invoke (*juceItem, static_cast<int> ([item tag]));
+            });
+
+            addMethod (@selector (menuNeedsUpdate:), [] (id self, SEL, NSMenu* menu)
+            {
+                getOwner (self)->updateTopLevelMenu (menu);
+            });
+
+            addMethod (@selector (validateMenuItem:), [] (id, SEL, NSMenuItem* item) -> BOOL
+            {
+                if (auto* juceItem = getPopupMenuItem (item))
+                    return juceItem->isEnabled;
+
+                return YES;
+            });
 
             addProtocol (@protocol (NSMenuDelegate));
-
-           #if defined (MAC_OS_X_VERSION_10_14)
             addProtocol (@protocol (NSMenuItemValidation));
-           #endif
 
             registerClass();
         }
@@ -570,33 +571,14 @@ private:
         }
 
     private:
-        static auto* getPopupMenuItem (NSMenuItem* item)
+        static PopupMenu::Item* getPopupMenuItem (NSMenuItem* item)
         {
             return getJuceClassFromNSObject<PopupMenu::Item> ([item representedObject]);
         }
 
-        static auto* getOwner (id self)
+        static JuceMainMenuHandler* getOwner (id self)
         {
             return getIvar<JuceMainMenuHandler*> (self, "owner");
-        }
-
-        static void menuItemInvoked (id self, SEL, NSMenuItem* item)
-        {
-            if (auto* juceItem = getPopupMenuItem (item))
-                getOwner (self)->invoke (*juceItem, static_cast<int> ([item tag]));
-        }
-
-        static void menuNeedsUpdate (id self, SEL, NSMenu* menu)
-        {
-            getOwner (self)->updateTopLevelMenu (menu);
-        }
-
-        static BOOL validateMenuItem (id, SEL, NSMenuItem* item)
-        {
-            if (auto* juceItem = getPopupMenuItem (item))
-                return juceItem->isEnabled;
-
-            return YES;
         }
     };
 };

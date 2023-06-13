@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE examples.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    The code included in this file is provided under the terms of the ISC license
    http://www.isc.org/downloads/software-support-policy/isc-license. Permission
@@ -192,20 +192,23 @@ private:
     {
         purchaseInProgress = false;
 
-        auto idx = findVoiceIndexFromIdentifier (info.purchase.productId);
-
-        if (isPositiveAndBelow (idx, voiceProducts.size()))
+        for (const auto& productId : info.purchase.productIds)
         {
-            auto& voiceProduct = voiceProducts.getReference (idx);
+            auto idx = findVoiceIndexFromIdentifier (productId);
 
-            voiceProduct.isPurchased = success;
-            voiceProduct.purchaseInProgress = false;
-        }
-        else
-        {
-            // On failure Play Store will not tell us which purchase failed
-            for (auto& voiceProduct : voiceProducts)
+            if (isPositiveAndBelow (idx, voiceProducts.size()))
+            {
+                auto& voiceProduct = voiceProducts.getReference (idx);
+
+                voiceProduct.isPurchased = success;
                 voiceProduct.purchaseInProgress = false;
+            }
+            else
+            {
+                // On failure Play Store will not tell us which purchase failed
+                for (auto& voiceProduct : voiceProducts)
+                    voiceProduct.purchaseInProgress = false;
+            }
         }
 
         guiUpdater.triggerAsyncUpdate();
@@ -215,15 +218,18 @@ private:
     {
         if (success)
         {
-            for (auto& info : infos)
+            for (const auto& info : infos)
             {
-                auto idx = findVoiceIndexFromIdentifier (info.purchase.productId);
-
-                if (isPositiveAndBelow (idx, voiceProducts.size()))
+                for (const auto& productId : info.purchase.productIds)
                 {
-                    auto& voiceProduct = voiceProducts.getReference (idx);
+                    auto idx = findVoiceIndexFromIdentifier (productId);
 
-                    voiceProduct.isPurchased = true;
+                    if (isPositiveAndBelow (idx, voiceProducts.size()))
+                    {
+                        auto& voiceProduct = voiceProducts.getReference (idx);
+
+                        voiceProduct.isPurchased = true;
+                    }
                 }
             }
 
@@ -235,7 +241,7 @@ private:
             havePricesBeenFetched = true;
             StringArray identifiers;
 
-            for (auto& voiceProduct : voiceProducts)
+            for (const auto& voiceProduct : voiceProducts)
                 identifiers.add (voiceProduct.identifier);
 
             InAppPurchases::getInstance()->getProductsInformation (identifiers);

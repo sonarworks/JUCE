@@ -2,15 +2,15 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2020 - Raw Material Software Limited
+   Copyright (c) 2022 - Raw Material Software Limited
 
    JUCE is an open source library subject to commercial or open-source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 6 End-User License
-   Agreement and JUCE Privacy Policy (both effective as of the 16th June 2020).
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
    Privacy Policy: www.juce.com/juce-privacy-policy
 
    Or: You may also use this code under the terms of the GPL v3 (see
@@ -57,18 +57,18 @@ public:
         return lastPeer;
     }
 
-    Component* findComponentAt (Point<float> screenPos)
+    static Component* findComponentAt (Point<float> screenPos, ComponentPeer* peer)
     {
-        if (auto* peer = getPeer())
-        {
-            auto relativePos = ScalingHelpers::unscaledScreenPosToScaled (peer->getComponent(),
-                                                                          peer->globalToLocal (screenPos));
-            auto& comp = peer->getComponent();
+        if (! ComponentPeer::isValidPeer (peer))
+            return nullptr;
 
-            // (the contains() call is needed to test for overlapping desktop windows)
-            if (comp.contains (relativePos))
-                return comp.getComponentAt (relativePos);
-        }
+        auto relativePos = ScalingHelpers::unscaledScreenPosToScaled (peer->getComponent(),
+                                                                      peer->globalToLocal (screenPos));
+        auto& comp = peer->getComponent();
+
+        // (the contains() call is needed to test for overlapping desktop windows)
+        if (comp.contains (relativePos))
+            return comp.getComponentAt (relativePos);
 
         return nullptr;
     }
@@ -244,11 +244,12 @@ public:
 
     void setPeer (ComponentPeer& newPeer, const PointerState& pointerState, Time time)
     {
-        if (&newPeer != lastPeer)
+        if (&newPeer != lastPeer && (   findComponentAt (pointerState.position, &newPeer) != nullptr
+                                     || findComponentAt (pointerState.position, lastPeer) == nullptr))
         {
             setComponentUnderMouse (nullptr, pointerState, time);
             lastPeer = &newPeer;
-            setComponentUnderMouse (findComponentAt (pointerState.position), pointerState, time);
+            setComponentUnderMouse (findComponentAt (pointerState.position, getPeer()), pointerState, time);
         }
     }
 
@@ -257,7 +258,7 @@ public:
         const auto& newScreenPos = newPointerState.position;
 
         if (! isDragging())
-            setComponentUnderMouse (findComponentAt (newScreenPos), newPointerState, time);
+            setComponentUnderMouse (findComponentAt (newScreenPos, getPeer()), newPointerState, time);
 
         if ((newPointerState != lastPointerState) || forceUpdate)
         {
