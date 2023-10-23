@@ -99,7 +99,12 @@ else()
 
     # Generator platform is only supported on specific generators
     if(CMAKE_GENERATOR MATCHES "^Visual Studio.*$")
-        set(ENV{CMAKE_GENERATOR_PLATFORM} "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+		if (CMAKE_GENERATOR_PLATFORM STREQUAL "")
+			set(ENV{CMAKE_GENERATOR_PLATFORM} "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+		else()
+			set(ENV{CMAKE_GENERATOR_PLATFORM} "${CMAKE_GENERATOR_PLATFORM}")
+			set(extra_compiler_flag_arguments "-A ${CMAKE_GENERATOR_PLATFORM}")
+		endif()
     endif()
 
     # Looks like we're bootstrapping, reinvoke CMake
