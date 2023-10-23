@@ -27,7 +27,7 @@
 
 
 //==============================================================================
-class ModuleItem   : public ProjectTreeItemBase
+class ModuleItem final : public ProjectTreeItemBase
 {
 public:
     ModuleItem (Project& p, const String& modID)
@@ -117,9 +117,9 @@ private:
     bool cppStandardHigherThanProject = false;
 
     //==============================================================================
-    class ModuleSettingsPanel  : public Component,
-                                 private ValueTree::Listener,
-                                 private Value::Listener
+    class ModuleSettingsPanel final : public Component,
+                                      private ValueTree::Listener,
+                                      private Value::Listener
     {
     public:
         ModuleSettingsPanel (Project& p, const String& modID, TreeView* tree)
@@ -275,8 +275,8 @@ private:
         String moduleID;
 
         //==============================================================================
-        class ModuleInfoComponent  : public PropertyComponent,
-                                     private Value::Listener
+        class ModuleInfoComponent final  : public PropertyComponent,
+                                           private Value::Listener
         {
         public:
             ModuleInfoComponent (Project& p, const String& modID)
@@ -337,7 +337,7 @@ private:
         };
 
         //==============================================================================
-        class MissingDependenciesComponent  : public PropertyComponent
+        class MissingDependenciesComponent final : public PropertyComponent
         {
         public:
             MissingDependenciesComponent (Project& p, const String& modID)
@@ -375,10 +375,11 @@ private:
                 {
                     missingDependencies = enabledModules.getExtraDependenciesNeeded (moduleID);
 
-                    AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon,
-                                                      "Adding Missing Dependencies",
-                                                      "Couldn't locate some of these modules - you'll need to find their "
-                                                      "folders manually and add them to the list.");
+                    auto options = MessageBoxOptions::makeOptionsOk (MessageBoxIconType::WarningIcon,
+                                                                     "Adding Missing Dependencies",
+                                                                     "Couldn't locate some of these modules - you'll need to find their "
+                                                                     "folders manually and add them to the list.");
+                    messageBox = AlertWindow::showScopedAsync (options, nullptr);
                 }
             }
 
@@ -393,12 +394,13 @@ private:
             String moduleID;
             StringArray missingDependencies;
             TextButton fixButton { "Add Required Modules" };
+            ScopedMessageBox messageBox;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MissingDependenciesComponent)
         };
 
         //==============================================================================
-        struct CppStandardWarningComponent    : public PropertyComponent
+        struct CppStandardWarningComponent final : public PropertyComponent
         {
             CppStandardWarningComponent()
                 : PropertyComponent ("CppStandard", 100)
@@ -426,9 +428,9 @@ private:
 };
 
 //==============================================================================
-class EnabledModulesItem   : public ProjectTreeItemBase,
-                             private Value::Listener,
-                             private AvailableModulesList::Listener
+class EnabledModulesItem final : public ProjectTreeItemBase,
+                                 private Value::Listener,
+                                 private AvailableModulesList::Listener
 {
 public:
     EnabledModulesItem (Project& p)
