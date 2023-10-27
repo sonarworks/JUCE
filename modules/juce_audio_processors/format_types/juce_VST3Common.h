@@ -404,7 +404,7 @@ namespace detail
         { k30Music,                     { X::left, X::right, X::surround } },
         { k40Cine,                      { X::left, X::right, X::centre, X::surround } },
         { k31Cine,                      { X::left, X::right, X::centre, X::LFE } },
-        { k41Music,                     { X::left, X::right, X::leftSurroundRear, X::rightSurroundRear, X::LFE, X::topSideLeft, X::topSideRight} },
+        { k41Music,                     { X::left, X::right, X::leftSurroundRear, X::rightSurroundRear, X::LFE } },
         { k50,                          { X::left, X::right, X::centre, X::leftSurround, X::rightSurround } },
         { k51,                          { X::left, X::right, X::centre, X::LFE, X::leftSurround, X::rightSurround } },
         { k60Cine,                      { X::left, X::right, X::centre, X::leftSurround, X::rightSurround, X::centreSurround } },
@@ -428,7 +428,6 @@ namespace detail
         { k71_6,                        { X::left, X::right, X::centre, X::LFE, X::leftSurroundRear, X::rightSurroundRear, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight, X::topSideLeft, X::topSideRight } },
         { k70_6,                        { X::left, X::right, X::centre,         X::leftSurroundRear, X::rightSurroundRear, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight, X::topSideLeft, X::topSideRight } },
 
-        { k91_4,                        { X::left, X::right, X::centre, X::leftSurroundSide, X::rightSurroundSide, X::leftSurroundRear, X::rightSurroundRear, X::LFE, X::topSideLeft, X::topSideRight } },
         // The VST3 layout uses 'left/right' and 'left-of-center/right-of-center', but the JUCE layout uses 'left/right' and 'wide-left/wide-right'.
         { k91_4,                        { X::wideLeft, X::wideRight, X::centre, X::LFE, X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight } },
         { k90_4,                        { X::wideLeft, X::wideRight, X::centre,         X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight } },
