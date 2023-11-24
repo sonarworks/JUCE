@@ -165,7 +165,16 @@ bool AudioFormatReader::read (AudioBuffer<float>* buffer,
             chans[0] = dests[0];
 
             if (numChannels > 1)
-                chans[1] = dests[1];
+            {
+                if (numTargetChannels > 1)
+                {
+                    chans[1] = dests[1];
+                }
+                else
+                {
+                    chans[1] = dests[0];
+                }
+            }
         }
         else if (useReaderLeftChan || (numChannels == 1))
         {
