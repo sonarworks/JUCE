@@ -652,6 +652,11 @@ using PlaybackRendererInterface = PlaybackRegionRegistry<ARA::ARAPlaybackRendere
 */
 using EditorRendererInterface   = PlaybackRegionRegistry<ARA::ARAEditorRendererRef,   ARA::ARAEditorRendererInterface>;
 
+struct EditorViewInterface {
+    ARA::ARAEditorViewRef editorViewRef { nullptr };
+    const ARA::ARAEditorViewInterface* editorViewInterface { nullptr };
+};
+
 //==============================================================================
 /** Wrapper class for `ARA::ARAPlugInExtensionInstance*`.
 
@@ -696,6 +701,10 @@ public:
         interface was provided by the instance.
      */
     EditorRendererInterface   getEditorRendererInterface() const;
+
+    /** Returns the ARA::ARAEditorViewInterface* to use with ARA 2.0
+     */
+    EditorViewInterface  getEditorViewInterface() const;
 
     /** Returns false if the PlugInExtensionInstance was default constructed and represents
         no binding to an ARAHostDocumentController.

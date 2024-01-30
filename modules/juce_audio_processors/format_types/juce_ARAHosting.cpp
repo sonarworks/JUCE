@@ -269,6 +269,14 @@ EditorRendererInterface PlugInExtensionInstance::getEditorRendererInterface() co
     return {};
 }
 
+EditorViewInterface PlugInExtensionInstance::getEditorViewInterface() const
+{
+    if (instance != nullptr)
+        return EditorViewInterface{ instance->editorViewRef, instance->editorViewInterface };
+
+    return {};
+}
+
 } // namespace ARAHostModel
 
 //==============================================================================
