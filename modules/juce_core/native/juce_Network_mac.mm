@@ -389,7 +389,7 @@ private:
         {
             getState (self)->finishedLoading();
         }
-        static bool canAuthenticateAgainstProtectionSpace (id self, SEL, NSURLConnection*, NSURLProtectionSpace*)
+        static bool canAuthenticateAgainstProtectionSpace (id /*self*/, SEL, NSURLConnection*, NSURLProtectionSpace*)
         {
             return true;
         }
