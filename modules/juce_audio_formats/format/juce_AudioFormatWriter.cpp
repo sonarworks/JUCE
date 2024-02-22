@@ -256,6 +256,11 @@ public:
         return true;
     }
 
+    int getNumPending() const noexcept
+    {
+        return fifo.getNumReady();
+    }
+
     int useTimeSlice() override
     {
         return writePendingData();
@@ -357,6 +362,11 @@ void AudioFormatWriter::ThreadedWriter::setDataReceiver (AudioFormatWriter::Thre
 void AudioFormatWriter::ThreadedWriter::setFlushInterval (int numSamplesPerFlush) noexcept
 {
     buffer->setFlushInterval (numSamplesPerFlush);
+}
+
+int AudioFormatWriter::ThreadedWriter::getNumPending() const noexcept
+{
+    return buffer->getNumPending();
 }
 
 } // namespace juce

@@ -237,6 +237,10 @@ public:
         */
         void setFlushInterval (int numSamplesPerFlush) noexcept;
 
+        /** Gets the number of pending samples that are not yet read by the underlying writer
+        */
+        int getNumPending() const noexcept;
+
     private:
         class Buffer;
         std::unique_ptr<Buffer> buffer;
