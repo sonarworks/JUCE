@@ -509,6 +509,8 @@ public:
         webView.reset ([[WKWebView alloc] initWithFrame: CGRectMake (0, 0, 100.0f, 100.0f)]);
        #endif
 
+       [webView.get() setValue:[NSNumber numberWithBool: YES] forKey: @"drawsTransparentBackground"];
+
         if (userAgent.isNotEmpty())
             webView.get().customUserAgent = juceStringToNS (userAgent);
 
