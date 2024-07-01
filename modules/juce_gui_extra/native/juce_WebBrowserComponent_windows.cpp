@@ -439,6 +439,14 @@ public:
     {
         removeEventHandlers();
         closeWebView();
+
+        if (webView2ConstructionHelper.webView2BeingCreated == this)
+        {
+            webView2ConstructionHelper.webView2BeingCreated = nullptr;
+            webView2ConstructionHelper.viewsWaitingForCreation.erase(this);
+            if (!webView2ConstructionHelper.viewsWaitingForCreation.empty())
+                (*webView2ConstructionHelper.viewsWaitingForCreation.begin())->triggerAsyncUpdate();
+        }
     }
 
     void createBrowser() override
