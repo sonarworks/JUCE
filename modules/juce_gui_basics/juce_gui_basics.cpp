@@ -51,7 +51,9 @@
 #if JUCE_MAC
  #import <IOKit/pwr_mgt/IOPMLib.h>
  #import <MetalKit/MetalKit.h>
-
+ #if defined (MAC_OS_VERSION_14_4) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_4
+  #import <ScreenCaptureKit/ScreenCaptureKit.h>
+ #endif
 #elif JUCE_IOS
  #if JUCE_PUSH_NOTIFICATIONS
   #import <UserNotifications/UserNotifications.h>
