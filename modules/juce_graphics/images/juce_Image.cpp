@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -26,6 +35,233 @@
 namespace juce
 {
 
+namespace BitmapDataDetail
+{
+    template <auto T>
+    using FormatConstant = std::integral_constant<decltype (T), T>;
+
+    using ARGB = FormatConstant<Image::PixelFormat::ARGB>;
+    using RGB  = FormatConstant<Image::PixelFormat::RGB>;
+    using A    = FormatConstant<Image::PixelFormat::SingleChannel>;
+
+    static Colour getPixelColour (const uint8* pixel, A)
+    {
+        return Colour (*((const PixelAlpha*) pixel));
+    }
+
+    static Colour getPixelColour (const uint8* pixel, RGB)
+    {
+        return Colour (*((const PixelRGB*) pixel));
+    }
+
+    static Colour getPixelColour (const uint8* pixel, ARGB)
+    {
+        return Colour (((const PixelARGB*) pixel)->getUnpremultiplied());
+    }
+
+    static void setPixelColour (uint8* pixel, PixelARGB col, A)
+    {
+        ((PixelAlpha*) pixel)->set (col);
+    }
+
+    static void setPixelColour (uint8* pixel, PixelARGB col, RGB)
+    {
+        ((PixelRGB*) pixel)->set (col);
+    }
+
+    static void setPixelColour (uint8* pixel, PixelARGB col, ARGB)
+    {
+        ((PixelARGB*) pixel)->set (col);
+    }
+
+    using ConverterFn = void (*) (const Image::BitmapData& src, const Image::BitmapData& dst, int w, int h);
+
+    template <typename From, typename To>
+    static constexpr ConverterFn makeConverterFn (From, To)
+    {
+        struct GetPixel
+        {
+            explicit GetPixel (const Image::BitmapData& bd)
+                : data (bd.data),
+                  lineStride ((size_t) bd.lineStride),
+                  pixelStride ((size_t) bd.pixelStride) {}
+
+            uint8* operator() (int x, int y) const
+            {
+                return data + (size_t) y * (size_t) lineStride + (size_t) x * (size_t) pixelStride;
+            }
+
+            uint8* data;
+            size_t lineStride, pixelStride;
+        };
+
+        return [] (const Image::BitmapData& src, const Image::BitmapData& dst, int w, int h)
+        {
+            const GetPixel getSrc { src }, getDst { dst };
+
+            for (int y = 0; y < h; ++y)
+            {
+                for (int x = 0; x < w; ++x)
+                {
+                    const auto srcColour = getPixelColour (getSrc (x, y), From{});
+                    setPixelColour (getDst (x, y), srcColour.getPixelARGB(), To{});
+                }
+            }
+        };
+    }
+
+    template <typename From, typename... To>
+    static constexpr auto makeConverterFns (From from, To... to)
+    {
+        return std::array<ConverterFn, sizeof... (To)> { makeConverterFn (from, to)... };
+    }
+
+    /** This structure holds a 2D array of function pointers.
+        The structure is indexed by source format and destination format, where the function
+        at that index will convert an entire BitmapData array between those two formats.
+
+        This approach is designed to avoid branching, especially switch statements, from
+        the inner loop of the conversion. At time of writing, compilers cannot automatically
+        vectorise loops containing switch statements. Therefore, it's often faster to move
+        switches or table lookups outside tight loops.
+
+        This is the old, slow approach:
+
+        @code
+            for (int y = 0; y < dest.height; ++y)
+                for (int x = 0; x < dest.width; ++x)
+                    dest.setPixelColour (x, y, src.getPixelColour (x, y));
+        @endcode
+
+        This is a faster way to write the same thing:
+
+        @code
+            if (const auto* converter = converterFnTable.getConverterFor (src.pixelFormat, dest.pixelFormat))
+                converter (src, dest, dest.width, dest.height);
+        @endcode
+    */
+    template <typename... Formats>
+    class ConverterFnTable
+    {
+    public:
+        constexpr ConverterFn getConverterFor (Image::PixelFormat src, Image::PixelFormat dst) const
+        {
+            const auto srcIndex = toIndex (src, Formats{}...);
+            const auto dstIndex = toIndex (dst, Formats{}...);
+
+            if (srcIndex >= sizeof... (Formats) || dstIndex >= sizeof... (Formats))
+                return nullptr;
+
+            return table[srcIndex][dstIndex];
+        }
+
+    private:
+        static size_t toIndex (Image::PixelFormat)
+        {
+            return 0;
+        }
+
+        template <typename Head, typename... Tail>
+        static size_t toIndex (Image::PixelFormat src, Head head, Tail... tail)
+        {
+            return src == head() ? 0 : 1 + toIndex (src, tail...);
+        }
+
+        std::array<std::array<ConverterFn, sizeof... (Formats)>, sizeof... (Formats)> table
+        {
+            makeConverterFns (Formats{}, Formats{}...)...
+        };
+    };
+
+    static void convert (const Image::BitmapData& src, Image::BitmapData& dest)
+    {
+        jassert (src.width == dest.width);
+        jassert (src.height == dest.height);
+
+        static constexpr auto converterFnTable = ConverterFnTable<RGB, ARGB, A>{};
+
+        if (src.pixelStride == dest.pixelStride && src.pixelFormat == dest.pixelFormat)
+        {
+            for (int y = 0; y < dest.height; ++y)
+                memcpy (dest.getLinePointer (y), src.getLinePointer (y), (size_t) dest.pixelStride * (size_t) dest.width);
+        }
+        else
+        {
+            if (auto* converter = converterFnTable.getConverterFor (src.pixelFormat, dest.pixelFormat))
+                converter (src, dest, dest.width, dest.height);
+        }
+    }
+
+    static Image convert (const Image::BitmapData& src, const ImageType& type)
+    {
+        Image result (type.create (src.pixelFormat, src.width, src.height, false));
+
+        {
+            Image::BitmapData dest (result, Image::BitmapData::writeOnly);
+            BitmapDataDetail::convert (src, dest);
+        }
+
+        return result;
+    }
+}
+
+class SubsectionPixelData : public ImagePixelData
+{
+public:
+    SubsectionPixelData (ImagePixelData::Ptr source, Rectangle<int> r)
+        : ImagePixelData (source->pixelFormat, r.getWidth(), r.getHeight()),
+          sourceImage (std::move (source)),
+          area (r)
+    {
+    }
+
+    Rectangle<int>      getSubsection()      const { return area; }
+    ImagePixelData::Ptr getSourcePixelData() const { return sourceImage; }
+
+    std::unique_ptr<LowLevelGraphicsContext> createLowLevelContext() override
+    {
+        auto g = sourceImage->createLowLevelContext();
+        g->clipToRectangle (area);
+        g->setOrigin (area.getPosition());
+        return g;
+    }
+
+    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode mode) override
+    {
+        sourceImage->initialiseBitmapData (bitmap, x + area.getX(), y + area.getY(), mode);
+
+        if (mode != Image::BitmapData::readOnly)
+            sendDataChangeMessage();
+    }
+
+    ImagePixelData::Ptr clone() override
+    {
+        jassert (getReferenceCount() > 0); // (This method can't be used on an unowned pointer, as it will end up self-deleting)
+        auto type = createType();
+        auto result = type->create (pixelFormat, area.getWidth(), area.getHeight(), pixelFormat != Image::RGB);
+
+        {
+            Graphics g { Image { result } };
+            g.drawImageAt (Image (*this), 0, 0);
+        }
+
+        return result;
+    }
+
+    std::unique_ptr<ImageType> createType() const override { return sourceImage->createType(); }
+
+    /* as we always hold a reference to image, don't double count */
+    int getSharedCount() const noexcept override { return getReferenceCount() + sourceImage->getSharedCount() - 1; }
+
+private:
+    friend class Image;
+    const ImagePixelData::Ptr sourceImage;
+    const Rectangle<int> area;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SubsectionPixelData)
+};
+
+//==============================================================================
 ImagePixelData::ImagePixelData (Image::PixelFormat format, int w, int h)
     : pixelFormat (format), width (w), height (h)
 {
@@ -48,9 +284,19 @@ int ImagePixelData::getSharedCount() const noexcept
     return getReferenceCount();
 }
 
+void ImagePixelData::applyGaussianBlurEffect ([[maybe_unused]] float radius, Image& result)
+{
+    result = {};
+}
+
+void ImagePixelData::applySingleChannelBoxBlurEffect ([[maybe_unused]] int radius, juce::Image &result)
+{
+    result = {};
+}
+
 //==============================================================================
-ImageType::ImageType() {}
-ImageType::~ImageType() {}
+ImageType::ImageType() = default;
+ImageType::~ImageType() = default;
 
 Image ImageType::convert (const Image& source) const
 {
@@ -59,26 +305,14 @@ Image ImageType::convert (const Image& source) const
 
     const Image::BitmapData src (source, Image::BitmapData::readOnly);
 
-    Image newImage (create (src.pixelFormat, src.width, src.height, false));
-    Image::BitmapData dest (newImage, Image::BitmapData::writeOnly);
+    if (src.data == nullptr)
+        return {};
 
-    if (src.pixelStride == dest.pixelStride && src.pixelFormat == dest.pixelFormat)
-    {
-        for (int y = 0; y < dest.height; ++y)
-            memcpy (dest.getLinePointer (y), src.getLinePointer (y), (size_t) dest.lineStride);
-    }
-    else
-    {
-        for (int y = 0; y < dest.height; ++y)
-            for (int x = 0; x < dest.width; ++x)
-                dest.setPixelColour (x, y, src.getPixelColour (x, y));
-    }
-
-    return newImage;
+    return BitmapDataDetail::convert (src, *this);
 }
 
 //==============================================================================
-class SoftwarePixelData final : public ImagePixelData
+class SoftwarePixelData : public ImagePixelData
 {
 public:
     SoftwarePixelData (Image::PixelFormat formatToUse, int w, int h, bool clearImage)
@@ -124,8 +358,8 @@ private:
     JUCE_LEAK_DETECTOR (SoftwarePixelData)
 };
 
-SoftwareImageType::SoftwareImageType() {}
-SoftwareImageType::~SoftwareImageType() {}
+SoftwareImageType::SoftwareImageType() = default;
+SoftwareImageType::~SoftwareImageType() = default;
 
 ImagePixelData::Ptr SoftwareImageType::create (Image::PixelFormat format, int width, int height, bool clearImage) const
 {
@@ -138,15 +372,15 @@ int SoftwareImageType::getTypeID() const
 }
 
 //==============================================================================
-NativeImageType::NativeImageType() {}
-NativeImageType::~NativeImageType() {}
+NativeImageType::NativeImageType() = default;
+NativeImageType::~NativeImageType() = default;
 
 int NativeImageType::getTypeID() const
 {
     return 1;
 }
 
-#if JUCE_WINDOWS || JUCE_LINUX || JUCE_BSD
+#if JUCE_LINUX || JUCE_BSD
 ImagePixelData::Ptr NativeImageType::create (Image::PixelFormat format, int width, int height, bool clearImage) const
 {
     return new SoftwarePixelData (format, width, height, clearImage);
@@ -154,58 +388,6 @@ ImagePixelData::Ptr NativeImageType::create (Image::PixelFormat format, int widt
 #endif
 
 //==============================================================================
-class SubsectionPixelData final : public ImagePixelData
-{
-public:
-    SubsectionPixelData (ImagePixelData::Ptr source, Rectangle<int> r)
-        : ImagePixelData (source->pixelFormat, r.getWidth(), r.getHeight()),
-          sourceImage (std::move (source)), area (r)
-    {
-    }
-
-    std::unique_ptr<LowLevelGraphicsContext> createLowLevelContext() override
-    {
-        auto g = sourceImage->createLowLevelContext();
-        g->clipToRectangle (area);
-        g->setOrigin (area.getPosition());
-        return g;
-    }
-
-    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode mode) override
-    {
-        sourceImage->initialiseBitmapData (bitmap, x + area.getX(), y + area.getY(), mode);
-
-        if (mode != Image::BitmapData::readOnly)
-            sendDataChangeMessage();
-    }
-
-    ImagePixelData::Ptr clone() override
-    {
-        jassert (getReferenceCount() > 0); // (This method can't be used on an unowned pointer, as it will end up self-deleting)
-        auto type = createType();
-
-        Image newImage (type->create (pixelFormat, area.getWidth(), area.getHeight(), pixelFormat != Image::RGB));
-
-        {
-            Graphics g (newImage);
-            g.drawImageAt (Image (*this), 0, 0);
-        }
-
-        return *newImage.getPixelData();
-    }
-
-    std::unique_ptr<ImageType> createType() const override          { return sourceImage->createType(); }
-
-    /* as we always hold a reference to image, don't double count */
-    int getSharedCount() const noexcept override    { return getReferenceCount() + sourceImage->getSharedCount() - 1; }
-
-private:
-    friend class Image;
-    const ImagePixelData::Ptr sourceImage;
-    const Rectangle<int> area;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SubsectionPixelData)
-};
 
 Image Image::getClippedImage (const Rectangle<int>& area) const
 {
@@ -217,14 +399,11 @@ Image Image::getClippedImage (const Rectangle<int>& area) const
     if (validArea.isEmpty())
         return {};
 
-    return Image (*new SubsectionPixelData (image, validArea));
+    return Image { ImagePixelData::Ptr { new SubsectionPixelData { image, validArea } } };
 }
-
 
 //==============================================================================
-Image::Image() noexcept
-{
-}
+Image::Image() noexcept = default;
 
 Image::Image (ReferenceCountedObjectPtr<ImagePixelData> instance) noexcept
     : image (std::move (instance))
@@ -263,11 +442,15 @@ Image& Image::operator= (Image&& other) noexcept
     return *this;
 }
 
-Image::~Image()
-{
-}
+Image::~Image() = default;
 
 int Image::getReferenceCount() const noexcept           { return image == nullptr ? 0 : image->getSharedCount(); }
+
+bool Image::isValid() const noexcept
+{
+    return image != nullptr;
+}
+
 int Image::getWidth() const noexcept                    { return image == nullptr ? 0 : image->width; }
 int Image::getHeight() const noexcept                   { return image == nullptr ? 0 : image->height; }
 Rectangle<int> Image::getBounds() const noexcept        { return image == nullptr ? Rectangle<int>() : Rectangle<int> (image->width, image->height); }
@@ -416,17 +599,15 @@ Image::BitmapData::~BitmapData()
 
 Colour Image::BitmapData::getPixelColour (int x, int y) const noexcept
 {
-    jassert (isPositiveAndBelow (x, width) && isPositiveAndBelow (y, height));
-
-    auto pixel = getPixelPointer (x, y);
+    auto* pixel = getPixelPointer (x, y);
 
     switch (pixelFormat)
     {
-        case Image::ARGB:           return Colour ( ((const PixelARGB*)  pixel)->getUnpremultiplied());
-        case Image::RGB:            return Colour (*((const PixelRGB*)   pixel));
-        case Image::SingleChannel:  return Colour (*((const PixelAlpha*) pixel));
-        case Image::UnknownFormat:
-        default:                    jassertfalse; break;
+        case ARGB:           return BitmapDataDetail::getPixelColour (pixel, BitmapDataDetail::ARGB{});
+        case RGB:            return BitmapDataDetail::getPixelColour (pixel, BitmapDataDetail::RGB{});
+        case SingleChannel:  return BitmapDataDetail::getPixelColour (pixel, BitmapDataDetail::A{});
+        case UnknownFormat:
+        default:             jassertfalse; break;
     }
 
     return {};
@@ -434,30 +615,28 @@ Colour Image::BitmapData::getPixelColour (int x, int y) const noexcept
 
 void Image::BitmapData::setPixelColour (int x, int y, Colour colour) const noexcept
 {
-    jassert (isPositiveAndBelow (x, width) && isPositiveAndBelow (y, height));
-
-    auto pixel = getPixelPointer (x, y);
+    auto* pixel = getPixelPointer (x, y);
     auto col = colour.getPixelARGB();
 
     switch (pixelFormat)
     {
-        case Image::ARGB:           ((PixelARGB*)  pixel)->set (col); break;
-        case Image::RGB:            ((PixelRGB*)   pixel)->set (col); break;
-        case Image::SingleChannel:  ((PixelAlpha*) pixel)->set (col); break;
-        case Image::UnknownFormat:
-        default:                    jassertfalse; break;
+        case ARGB:           return BitmapDataDetail::setPixelColour (pixel, col, BitmapDataDetail::ARGB{});
+        case RGB:            return BitmapDataDetail::setPixelColour (pixel, col, BitmapDataDetail::RGB{});
+        case SingleChannel:  return BitmapDataDetail::setPixelColour (pixel, col, BitmapDataDetail::A{});
+        case UnknownFormat:
+        default:             jassertfalse; break;
     }
 }
 
 //==============================================================================
 void Image::clear (const Rectangle<int>& area, Colour colourToClearTo)
 {
-    if (image != nullptr)
-    {
-        auto g = image->createLowLevelContext();
-        g->setFill (colourToClearTo);
-        g->fillRect (area, true);
-    }
+    if (image == nullptr)
+        return;
+
+    auto g = image->createLowLevelContext();
+    g->setFill (colourToClearTo);
+    g->fillRect (area, true);
 }
 
 //==============================================================================
@@ -502,15 +681,8 @@ struct PixelIterator
     static void iterate (const Image::BitmapData& data, const PixelOperation& pixelOp)
     {
         for (int y = 0; y < data.height; ++y)
-        {
-            auto p = data.getLinePointer (y);
-
             for (int x = 0; x < data.width; ++x)
-            {
-                pixelOp (*reinterpret_cast<PixelType*> (p));
-                p += data.pixelStride;
-            }
-        }
+                pixelOp (*reinterpret_cast<PixelType*> (data.getPixelPointer (x, y)));
     }
 };
 
@@ -527,40 +699,20 @@ static void performPixelOp (const Image::BitmapData& data, const PixelOperation&
     }
 }
 
-struct AlphaMultiplyOp
-{
-    float alpha;
-
-    template <class PixelType>
-    void operator() (PixelType& pixel) const
-    {
-        pixel.multiplyAlpha (alpha);
-    }
-};
-
 void Image::multiplyAllAlphas (float amountToMultiplyBy)
 {
     jassert (hasAlphaChannel());
 
     const BitmapData destData (*this, 0, 0, getWidth(), getHeight(), BitmapData::readWrite);
-    performPixelOp (destData, AlphaMultiplyOp { amountToMultiplyBy });
+    performPixelOp (destData, [&] (auto& p) { p.multiplyAlpha (amountToMultiplyBy); });
 }
-
-struct DesaturateOp
-{
-    template <class PixelType>
-    void operator() (PixelType& pixel) const
-    {
-        pixel.desaturate();
-    }
-};
 
 void Image::desaturate()
 {
     if (isARGB() || isRGB())
     {
         const BitmapData destData (*this, 0, 0, getWidth(), getHeight(), BitmapData::readWrite);
-        performPixelOp (destData, DesaturateOp());
+        performPixelOp (destData, [] (auto& p) { p.desaturate(); });
     }
 }
 
@@ -684,16 +836,119 @@ void Image::moveImageSection (int dx, int dy,
     }
 }
 
+void ImageEffects::applyGaussianBlurEffect (float radius, const Image& input, Image& result)
+{
+    auto image = input.getPixelData();
+
+    if (image == nullptr)
+    {
+        result = {};
+        return;
+    }
+
+    auto copy = result;
+    image->applyGaussianBlurEffect (radius, copy);
+
+    if (copy.isValid())
+    {
+        result = std::move (copy);
+        return;
+    }
+
+    const auto tie = [] (const auto& x) { return std::tuple (x.getFormat(), x.getWidth(), x.getHeight()); };
+
+    if (tie (input) != tie (result))
+        result = Image { input.getFormat(), input.getWidth(), input.getHeight(), false };
+
+    ImageConvolutionKernel blurKernel (roundToInt (radius * 2.0f));
+
+    blurKernel.createGaussianBlur (radius);
+
+    blurKernel.applyToImage (result, input, result.getBounds());
+}
+
+static void blurDataTriplets (uint8* d, int num, const int delta) noexcept
+{
+    uint32 last = d[0];
+    d[0] = (uint8) ((d[0] + d[delta] + 1) / 3);
+    d += delta;
+
+    num -= 2;
+
+    do
+    {
+        const uint32 newLast = d[0];
+        d[0] = (uint8) ((last + d[0] + d[delta] + 1) / 3);
+        d += delta;
+        last = newLast;
+    }
+    while (--num > 0);
+
+    d[0] = (uint8) ((last + d[0] + 1) / 3);
+}
+
+static void blurSingleChannelImage (uint8* const data, const int width, const int height,
+                                    const int lineStride, const int repetitions) noexcept
+{
+    jassert (width > 2 && height > 2);
+
+    for (int y = 0; y < height; ++y)
+        for (int i = repetitions; --i >= 0;)
+            blurDataTriplets (data + lineStride * y, width, 1);
+
+    for (int x = 0; x < width; ++x)
+        for (int i = repetitions; --i >= 0;)
+            blurDataTriplets (data + x, height, lineStride);
+}
+
+static void blurSingleChannelImage (Image& image, int radius)
+{
+    const Image::BitmapData bm (image, Image::BitmapData::readWrite);
+    blurSingleChannelImage (bm.data, bm.width, bm.height, bm.lineStride, 2 * radius);
+}
+
+void ImageEffects::applySingleChannelBoxBlurEffect (int radius, const Image& input, Image& result)
+{
+    auto image = input.getPixelData();
+
+    if (image == nullptr)
+    {
+        result = {};
+        return;
+    }
+
+    auto copy = result;
+    image->applySingleChannelBoxBlurEffect (radius, copy);
+
+    if (copy.isValid())
+    {
+        result = std::move (copy);
+        return;
+    }
+
+    const auto inputConfig = std::tuple (Image::SingleChannel, input.getWidth(), input.getHeight());
+    const auto outputConfig = std::tuple (result.getFormat(), result.getWidth(), result.getHeight());
+
+    if (inputConfig != outputConfig)
+        result = Image { Image::SingleChannel, input.getWidth(), input.getHeight(), false };
+
+    {
+        Image::BitmapData source { input, Image::BitmapData::readOnly };
+        Image::BitmapData dest { result, Image::BitmapData::writeOnly };
+        BitmapDataDetail::convert (source, dest);
+    }
+
+    blurSingleChannelImage (result, radius);
+}
+
 //==============================================================================
 #if JUCE_ALLOW_STATIC_NULL_VARIABLES
 
-JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wdeprecated-declarations")
-JUCE_BEGIN_IGNORE_WARNINGS_MSVC (4996)
+JUCE_BEGIN_IGNORE_DEPRECATION_WARNINGS
 
 const Image Image::null;
 
-JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-JUCE_END_IGNORE_WARNINGS_MSVC
+JUCE_END_IGNORE_DEPRECATION_WARNINGS
 
 #endif
 

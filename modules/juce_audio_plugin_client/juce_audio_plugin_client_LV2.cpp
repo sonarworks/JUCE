@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -251,10 +260,9 @@ private:
     const std::map<LV2_URID, size_t> uridToIndexMap = [&]
     {
         std::map<LV2_URID, size_t> result;
-        size_t index = 0;
 
-        for (const auto& urid : indexToUridMap)
-            result.emplace (urid, index++);
+        for (const auto [index, urid] : enumerate (indexToUridMap))
+            result.emplace (urid, index);
 
         return result;
     }();
@@ -1079,9 +1087,9 @@ private:
                       "\tlv2:portProperty lv2:enumeration " << (param.isBoolean() ? ", lv2:toggled " : "") << ";\n"
                       "\tlv2:scalePoint ";
 
-                auto counter = 0;
+                const auto strings = param.getAllValueStrings();
 
-                for (const auto& string : param.getAllValueStrings())
+                for (const auto [counter, string] : enumerate (strings))
                 {
                     const auto value = jmap ((float) counter, 0.0f, (float) numSteps - 1.0f, min, max);
 
@@ -1089,8 +1097,6 @@ private:
                           "\t\trdfs:label \"" << string << "\" ;\n"
                           "\t\trdf:value " << value << " ;\n"
                           "\t]";
-
-                    ++counter;
                 }
             }
 
@@ -1285,8 +1291,8 @@ private:
               "\t\tatom:bufferType atom:Sequence ;\n"
               "\t\tatom:supports\n";
 
-       #if ! JucePlugin_IsSynth && ! JucePlugin_IsMidiEffect
-        if (proc.acceptsMidi())
+       #if ! JucePlugin_IsSynth
+        if (proc.acceptsMidi() || proc.isMidiEffect())
        #endif
             os << "\t\t\tmidi:MidiEvent ,\n";
 
@@ -1302,9 +1308,7 @@ private:
               "\t\tatom:bufferType atom:Sequence ;\n"
               "\t\tatom:supports\n";
 
-       #if ! JucePlugin_IsMidiEffect
-        if (proc.producesMidi())
-       #endif
+        if (proc.producesMidi() || proc.isMidiEffect())
             os << "\t\t\tmidi:MidiEvent ,\n";
 
         os << "\t\t\tpatch:Message ;\n"
