@@ -100,9 +100,11 @@ JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-W#warnings",
 
 #include <juce_audio_processors/format_types/VST3_SDK/pluginterfaces/base/fplatform.h>
 
-#ifdef SMTG_CPP20
- #undef SMTG_CPP20
- #define SMTG_CPP20 JUCE_CXX20_IS_AVAILABLE
+#ifdef _WIN32
+ #ifdef SMTG_CPP20
+  #undef SMTG_CPP20
+  #define SMTG_CPP20 JUCE_CXX20_IS_AVAILABLE
+ #endif
 #endif
 
 #if JUCE_VST3HEADERS_INCLUDE_HEADERS_ONLY
