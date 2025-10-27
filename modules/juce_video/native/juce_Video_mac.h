@@ -658,7 +658,12 @@ private:
         class WrappedPlayerLayer : public WrappedPlayer
         {
         public:
-            WrappedPlayerLayer()                        { [view.get() setLayer: playerLayer.get()]; }
+            WrappedPlayerLayer()
+            {
+                [view.get() setLayer: playerLayer.get()];
+                view.get().layer.shouldRasterize = YES;
+                view.get().layer.rasterizationScale = NSScreen.mainScreen.backingScaleFactor;
+            }
             NSView* getView() const override            { return view.get(); }
             AVPlayer* getPlayer() const override        { return [playerLayer.get() player]; }
             void setPlayer (AVPlayer* player) override  { [playerLayer.get() setPlayer: player]; }
@@ -834,7 +839,7 @@ private:
     void playbackReachedEndTime()
     {
         stop();
-        setPosition (0.0);
+        //setPosition (0.0);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Pimpl)
