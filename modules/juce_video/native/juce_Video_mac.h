@@ -839,6 +839,7 @@ private:
     void playbackReachedEndTime()
     {
         stop();
+        NullCheckedInvocation::invoke (owner.onEndReached);
         //setPosition (0.0);
     }
 

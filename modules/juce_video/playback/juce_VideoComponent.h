@@ -179,6 +179,9 @@ public:
         may need to load the video again. */
     std::function<void (const String& /*error*/)> onErrorOccurred;
 
+    /** Set this callback to be notified whenever an video has reached an end. */
+    std::function<void()> onEndReached;
+
 private:
     //==============================================================================
     struct Pimpl;
