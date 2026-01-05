@@ -142,18 +142,20 @@ public:
     void swapBuffers() noexcept
     {
         SwapBuffers (dc.get());
-        triggerAsyncUpdate();
+
+        if (! std::exchange (haveBuffersBeenSwapped, true))
+            triggerAsyncUpdate();
     }
 
     bool setSwapInterval (int numFramesPerSwap)
     {
-        jassert (isActive()); // this can only be called when the context is active..
+        jassert (isActive()); // this can only be called when the context is active
         return wglSwapIntervalEXT != nullptr && wglSwapIntervalEXT (numFramesPerSwap) != FALSE;
     }
 
     int getSwapInterval() const
     {
-        jassert (isActive()); // this can only be called when the context is active..
+        jassert (isActive()); // this can only be called when the context is active
         return wglGetSwapIntervalEXT != nullptr ? wglGetSwapIntervalEXT() : 0;
     }
 
@@ -193,6 +195,9 @@ public:
 
         return nullptr;
     }
+
+    void addListener (NativeContextListener&) {}
+    void removeListener (NativeContextListener&) {}
 
 private:
     //==============================================================================
@@ -425,6 +430,7 @@ private:
     OpenGLContext* context = nullptr;
     void* sharedContext = nullptr;
     double nativeScaleFactor = 1.0;
+    bool haveBuffersBeenSwapped = false;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NativeContext)

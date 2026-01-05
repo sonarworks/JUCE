@@ -34,7 +34,6 @@
 
 #pragma once
 
-
 //==============================================================================
 class AndroidProjectExporter final : public ProjectExporter
 {
@@ -113,7 +112,8 @@ public:
                                  androidReadMediaVideoPermission, androidExternalWritePermission,
                                  androidInAppBillingPermission, androidVibratePermission, androidOtherPermissions, androidPushNotifications,
                                  androidEnableRemoteNotifications, androidRemoteNotificationsConfigFile, androidEnableContentSharing, androidKeyStore,
-                                 androidKeyStorePass, androidKeyAlias, androidKeyAliasPass, gradleVersion, gradleToolchain, gradleClangTidy, androidPluginVersion;
+                                 androidKeyStorePass, androidKeyAlias, androidKeyAliasPass, gradleVersion, gradleToolchain, gradleClangTidy, androidPluginVersion,
+                                 androidEnableVirtualMidi;
 
     //==============================================================================
     AndroidProjectExporter (Project& p, const ValueTree& t)
@@ -131,8 +131,8 @@ public:
           androidManifestCustomXmlElements     (settings, Ids::androidManifestCustomXmlElements,     getUndoManager()),
           androidGradleSettingsContent         (settings, Ids::androidGradleSettingsContent,         getUndoManager()),
           androidVersionCode                   (settings, Ids::androidVersionCode,                   getUndoManager(), "1"),
-          androidMinimumSDK                    (settings, Ids::androidMinimumSDK,                    getUndoManager(), "21"),
-          androidTargetSDK                     (settings, Ids::androidTargetSDK,                     getUndoManager(), "34"),
+          androidMinimumSDK                    (settings, Ids::androidMinimumSDK,                    getUndoManager(), "24"),
+          androidTargetSDK                     (settings, Ids::androidTargetSDK,                     getUndoManager(), "35"),
           androidTheme                         (settings, Ids::androidTheme,                         getUndoManager()),
           androidExtraAssetsFolder             (settings, Ids::androidExtraAssetsFolder,             getUndoManager()),
           androidOboeRepositoryPath            (settings, Ids::androidOboeRepositoryPath,            getUndoManager()),
@@ -157,10 +157,11 @@ public:
           androidKeyStorePass                  (settings, Ids::androidKeyStorePass,                  getUndoManager(), "android"),
           androidKeyAlias                      (settings, Ids::androidKeyAlias,                      getUndoManager(), "androiddebugkey"),
           androidKeyAliasPass                  (settings, Ids::androidKeyAliasPass,                  getUndoManager(), "android"),
-          gradleVersion                        (settings, Ids::gradleVersion,                        getUndoManager(), "8.6"),
+          gradleVersion                        (settings, Ids::gradleVersion,                        getUndoManager(), "8.11.1"),
           gradleToolchain                      (settings, Ids::gradleToolchain,                      getUndoManager(), "clang"),
           gradleClangTidy                      (settings, Ids::gradleClangTidy,                      getUndoManager(), false),
-          androidPluginVersion                 (settings, Ids::androidPluginVersion,                 getUndoManager(), "8.4.1"),
+          androidPluginVersion                 (settings, Ids::androidPluginVersion,                 getUndoManager(), "8.10.0"),
+          androidEnableVirtualMidi             (settings, Ids::androidEnableVirtualMidi,             getUndoManager(), false),
           AndroidExecutable                    (getAppSettings().getStoredPath (Ids::androidStudioExePath, TargetOS::getThisOS()).get().toString())
     {
         name = getDisplayName();
@@ -171,7 +172,7 @@ public:
     void createToolchainExporterProperties (PropertyListBuilder& props)
     {
         props.add (new TextPropertyComponent (gradleVersion, "Gradle Version", 32, false),
-                   "The version of gradle that is used to build this app (4.10 is fine for JUCE)");
+                   "The version of gradle that is used to build this app");
 
         props.add (new TextPropertyComponent (androidPluginVersion, "Android Plug-in Version", 32, false),
                    "The version of the android build plugin for gradle that is used to build this app");
@@ -235,6 +236,7 @@ public:
         {
             copyAdditionalJavaLibs (appFolder);
             writeStringsXML        (targetFolder);
+            writeDeviceInfoXML     (targetFolder);
             writeAppIcons          (targetFolder);
         }
 
@@ -697,7 +699,7 @@ private:
         mo << "apply plugin: 'com.android." << (isLibrary() ? "library" : "application") << "'" << newLine << newLine;
 
         // NDK 26 is required for ANDROID_WEAK_API_DEFS, which is in turn required for weak-linking AFontMatcher
-        mo << "def ndkVersionString = \"26.2.11394342\"" << newLine << newLine;
+        mo << "def ndkVersionString = \"28.1.13356709\"" << newLine << newLine;
 
         mo << "android {"                                                                    << newLine;
         mo << "    compileSdk " << static_cast<int> (androidTargetSDK.get())                 << newLine;
@@ -999,6 +1001,9 @@ private:
         if (isInAppBillingEnabled())
             addOptJavaFolderToSourceSetsForModule (javaSourceSets, modules, "juce_product_unlocking");
 
+        if (isVirtualMidiEnabled())
+            addOptJavaFolderToSourceSetsForModule (javaSourceSets, modules, "juce_audio_devices");
+
         MemoryOutputStream mo;
         mo.setNewLineString (getNewLineString());
 
@@ -1145,7 +1150,7 @@ private:
                    "An integer value that represents the version of the application code, relative to other versions.");
 
         props.add (new TextPropertyComponent (androidMinimumSDK, "Minimum SDK Version", 32, false),
-                   "The number of the minimum version of the Android SDK that the app requires (must be 21 or higher).");
+                   "The number of the minimum version of the Android SDK that the app requires (must be 24 or higher).");
 
         props.add (new TextPropertyComponent (androidTargetSDK, "Target SDK Version", 32, false),
                    "The number of the version of the Android SDK that the app is targeting.");
@@ -1214,6 +1219,11 @@ private:
 
         props.add (new TextPropertyComponent (androidRemoteNotificationsConfigFile.getPropertyAsValue(), "Remote Notifications Config File", 2048, false),
                    "Path to google-services.json file. This will be the file provided by Firebase when creating a new app in Firebase console.");
+
+        props.add (new ChoicePropertyComponent (androidEnableVirtualMidi, "Enable Virtual MIDI"),
+                   "When enabled, this will add entries to your application manifest declaring that your program "
+                   "can provide the MidiDeviceService and/or MidiUmpDeviceService."
+                   "This has no effect unless the juce_audio_devices module is included in the project.");
 
         props.add (new TextPropertyComponent (androidManifestCustomXmlElements, "Custom Manifest XML Content", 8192, true),
                    "You can specify custom AndroidManifest.xml content overriding the default one generated by Projucer. "
@@ -1341,6 +1351,12 @@ private:
               && androidEnableRemoteNotifications.get();
     }
 
+    bool isVirtualMidiEnabled() const
+    {
+        return project.getEnabledModules().isModuleEnabled ("juce_audio_devices")
+              && androidEnableVirtualMidi.get();
+    }
+
     bool isInAppBillingEnabled() const
     {
         return project.getEnabledModules().isModuleEnabled ("juce_product_unlocking")
@@ -1395,6 +1411,58 @@ private:
         }
     }
 
+    void writeDeviceInfoXML (const File& folder) const
+    {
+        const auto makeDeviceNode = [this] (XmlElement& devices)
+        {
+            auto* device = devices.createNewChildElement ("device");
+            device->setAttribute ("manufacturer", project.getCompanyNameString());
+            device->setAttribute ("product", projectName);
+
+            const auto deviceName = (project.getCompanyNameString().isNotEmpty() ? (project.getCompanyNameString() + " ") : "")
+                                  + projectName;
+            device->setAttribute ("name", deviceName);
+            return device;
+        };
+
+        if (isVirtualMidiEnabled())
+        {
+            {
+                auto path = folder.getChildFile ("app")
+                                  .getChildFile ("src")
+                                  .getChildFile ("main")
+                                  .getChildFile ("res")
+                                  .getChildFile ("xml")
+                                  .getChildFile ("juce_midi_virtual_ump.xml");
+
+                auto devices = std::make_unique<XmlElement> ("devices");
+                auto* device = makeDeviceNode (*devices);
+                auto* port = device->createNewChildElement ("port");
+                port->setAttribute ("name", "MIDI 2.0");
+
+                writeXmlOrThrow (*devices, path, "utf-8", 100, true);
+            }
+
+            {
+                auto path = folder.getChildFile ("app")
+                                  .getChildFile ("src")
+                                  .getChildFile ("main")
+                                  .getChildFile ("res")
+                                  .getChildFile ("xml")
+                                  .getChildFile ("juce_midi_virtual_bytestream.xml");
+
+                auto devices = std::make_unique<XmlElement> ("devices");
+                auto* device = makeDeviceNode (*devices);
+                auto* portIn = device->createNewChildElement ("input-port");
+                portIn->setAttribute ("name", "In");
+                auto* portOut = device->createNewChildElement ("output-port");
+                portOut->setAttribute ("name", "Out");
+
+                writeXmlOrThrow (*devices, path, "utf-8", 100, true);
+            }
+        }
+    }
+
     void writeAndroidManifest (const File& folder) const
     {
         std::unique_ptr<XmlElement> manifest (createManifestXML());
@@ -1424,15 +1492,15 @@ private:
     {
         const auto icons = getIcons();
 
-        if (icons.big != nullptr && icons.small != nullptr)
+        if (icons.getBig() != nullptr && icons.getSmall() != nullptr)
         {
-            auto step = jmax (icons.big->getWidth(), icons.big->getHeight()) / 8;
+            auto step = jmax (icons.getBig()->getWidth(), icons.getBig()->getHeight()) / 8;
             writeIcon (folder.getChildFile ("drawable-xhdpi/icon.png"), build_tools::getBestIconForSize (icons, step * 8, false));
             writeIcon (folder.getChildFile ("drawable-hdpi/icon.png"),  build_tools::getBestIconForSize (icons, step * 6, false));
             writeIcon (folder.getChildFile ("drawable-mdpi/icon.png"),  build_tools::getBestIconForSize (icons, step * 4, false));
             writeIcon (folder.getChildFile ("drawable-ldpi/icon.png"),  build_tools::getBestIconForSize (icons, step * 3, false));
         }
-        else if (auto* icon = (icons.big != nullptr ? icons.big.get() : icons.small.get()))
+        else if (auto* icon = (icons.getBig() != nullptr ? icons.getBig() : icons.getSmall()))
         {
             writeIcon (folder.getChildFile ("drawable-mdpi/icon.png"), build_tools::rescaleImageForIcon (*icon, icon->getWidth()));
         }
@@ -1571,8 +1639,7 @@ private:
         if (isContentSharingEnabled())
             defines.set ("JUCE_CONTENT_SHARING", "1");
 
-        if (supportsGLv3())
-            defines.set ("JUCE_ANDROID_GL_ES_VERSION_3_0", "1");
+        defines.set ("JUCE_ANDROID_GL_ES_VERSION_3_0", "1");
 
         if (areRemoteNotificationsEnabled())
         {
@@ -1628,7 +1695,7 @@ private:
 
         libraries.add ("log");
         libraries.add ("android");
-        libraries.add (supportsGLv3() ? "GLESv3" : "GLESv2");
+        libraries.add ("GLESv3");
         libraries.add ("EGL");
 
         return libraries;
@@ -1812,7 +1879,7 @@ private:
             if (glVersion == nullptr)
                 glVersion = manifest.createNewChildElement ("uses-feature");
 
-            setAttributeIfNotPresent (*glVersion, "android:glEsVersion", (static_cast<int> (androidMinimumSDK.get()) >= 18 ? "0x00030000" : "0x00020000"));
+            setAttributeIfNotPresent (*glVersion, "android:glEsVersion", "0x00030000");
             setAttributeIfNotPresent (*glVersion, "android:required", "true");
         }
     }
@@ -1828,9 +1895,9 @@ private:
 
         if (! app->hasAttribute ("android:icon"))
         {
-            std::unique_ptr<Drawable> bigIcon (getBigIcon()), smallIcon (getSmallIcon());
+            const auto icons = getIcons();
 
-            if (bigIcon != nullptr || smallIcon != nullptr)
+            if (icons.getBig() != nullptr || icons.getSmall() != nullptr)
                 app->setAttribute ("android:icon", "@drawable/icon");
         }
 
@@ -1847,16 +1914,14 @@ private:
         setAttributeIfNotPresent (*act, "android:name", getActivityClassString());
 
         if (! act->hasAttribute ("android:configChanges"))
-            act->setAttribute ("android:configChanges", "keyboard|keyboardHidden|orientation|screenSize|navigation");
+            act->setAttribute ("android:configChanges", "keyboard|keyboardHidden|orientation|screenSize|navigation|smallestScreenSize|screenLayout|uiMode");
 
-        if (androidScreenOrientation.get() == "landscape")
+        if (androidScreenOrientation.get() != "unspecified")
         {
-            setAttributeIfNotPresent (*act, "android:screenOrientation",
-                                      static_cast<int> (androidMinimumSDK.get()) < 18 ? "sensorLandscape" : "userLandscape");
-        }
-        else
-        {
-            setAttributeIfNotPresent (*act, "android:screenOrientation", androidScreenOrientation.get());
+            setAttributeIfNotPresent (*act,
+                                      "android:screenOrientation",
+                                      androidScreenOrientation.get() == "landscape" ? "userLandscape"
+                                                                                    : androidScreenOrientation.get());
         }
 
         setAttributeIfNotPresent (*act, "android:launchMode", "singleTask");
@@ -1900,6 +1965,39 @@ private:
             auto* metaData = application.createNewChildElement ("meta-data");
             metaData->setAttribute ("android:name", "firebase_analytics_collection_deactivated");
             metaData->setAttribute ("android:value", "true");
+        }
+
+        if (isVirtualMidiEnabled())
+        {
+            {
+                auto* service = application.createNewChildElement ("service");
+                service->setAttribute ("android:name", "com.rmsl.juce.VirtualMidiServices$VirtualUmpService");
+                service->setAttribute ("android:enabled", "false");
+                service->setAttribute ("android:exported", "true");
+                service->setAttribute ("android:permission", "android.permission.BIND_MIDI_DEVICE_SERVICE");
+
+                auto* intentFilter = service->createNewChildElement ("intent-filter");
+                intentFilter->createNewChildElement ("action")->setAttribute ("android:name", "android.media.midi.MidiUmpDeviceService");
+
+                auto* property = service->createNewChildElement ("property");
+                property->setAttribute ("android:name", "android.media.midi.MidiUmpDeviceService");
+                property->setAttribute ("android:resource", "@xml/juce_midi_virtual_ump");
+            }
+
+            {
+                auto* service = application.createNewChildElement ("service");
+                service->setAttribute ("android:name", "com.rmsl.juce.VirtualMidiServices$VirtualBytestreamService");
+                service->setAttribute ("android:enabled", "false");
+                service->setAttribute ("android:exported", "true");
+                service->setAttribute ("android:permission", "android.permission.BIND_MIDI_DEVICE_SERVICE");
+
+                auto* intentFilter = service->createNewChildElement ("intent-filter");
+                intentFilter->createNewChildElement ("action")->setAttribute ("android:name", "android.media.midi.MidiDeviceService");
+
+                auto* metadata = service->createNewChildElement ("meta-data");
+                metadata->setAttribute ("android:name", "android.media.midi.MidiDeviceService");
+                metadata->setAttribute ("android:resource", "@xml/juce_midi_virtual_bytestream");
+            }
         }
     }
 
@@ -2013,11 +2111,6 @@ private:
             escapedArray.add ("\"" + element.replace ("\\", "\\\\").replace ("\"", "\\\"") + "\"");
 
         return escapedArray.joinIntoString (", ");
-    }
-
-    bool supportsGLv3() const
-    {
-        return (static_cast<int> (androidMinimumSDK.get()) >= 18);
     }
 
     //==============================================================================
