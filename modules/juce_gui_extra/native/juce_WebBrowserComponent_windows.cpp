@@ -491,7 +491,7 @@ public:
 
     void fallbackPaint (Graphics& webBrowserComponentContext) override
     {
-        webBrowserComponentContext.fillAll (Colours::white);
+        webBrowserComponentContext.fillAll (Colours::transparentWhite);
 
         if (! hasBrowserBeenCreated())
             checkWindowAssociation();
