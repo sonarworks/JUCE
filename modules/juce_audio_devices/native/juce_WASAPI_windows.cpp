@@ -1604,6 +1604,16 @@ public:
         }
     }
 
+    void* getNativeInputDeviceHandle() const override
+    {
+        return inputDevice ? inputDevice->device.get() : nullptr;
+    }
+
+    void* getNativeOutputDeviceHandle() const override
+    {
+        return outputDevice ? outputDevice->device.get() : nullptr;
+    }
+
     //==============================================================================
     String outputDeviceId, inputDeviceId;
     String lastError;

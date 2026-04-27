@@ -894,6 +894,9 @@ public:
         return outChans[0] != nullptr ? outChans[0]->xruns : -1;
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     //==============================================================================
     StringArray inChannels, outChannels;
     int outputDeviceIndex, inputDeviceIndex;

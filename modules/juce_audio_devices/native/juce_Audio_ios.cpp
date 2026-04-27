@@ -1674,6 +1674,9 @@ Image iOSAudioIODevice::getIcon (int size)                          { return pim
 #endif
 void iOSAudioIODevice::switchApplication()                          { return pimpl->switchApplication(); }
 
+void* iOSAudioIODevice::getNativeInputDeviceHandle() const { return {}; }
+void* iOSAudioIODevice::getNativeOutputDeviceHandle() const { return {}; }
+
 //==============================================================================
 iOSAudioIODeviceType::iOSAudioIODeviceType()
     : AudioIODeviceType (iOSAudioDeviceName)

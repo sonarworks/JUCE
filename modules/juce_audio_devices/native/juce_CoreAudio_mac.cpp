@@ -1495,6 +1495,9 @@ public:
         restarter = restarterIn;
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     WeakReference<CoreAudioIODeviceType> deviceType;
     bool hadDiscontinuity;
 
@@ -1807,6 +1810,9 @@ public:
     {
         return xruns.load();
     }
+
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
 
 private:
     static constexpr auto invalidSampleTime = std::numeric_limits<std::uint64_t>::max();

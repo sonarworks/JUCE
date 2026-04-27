@@ -355,6 +355,9 @@ public:
     */
     virtual int getXRunCount() const noexcept;
 
+    virtual void* getNativeInputDeviceHandle() const = 0;
+    virtual void* getNativeOutputDeviceHandle() const = 0;
+
     //==============================================================================
 protected:
     /** Creates a device, setting its name and type member variables. */

@@ -970,6 +970,9 @@ public:
             oldCallback->audioDeviceStopped();
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     String inputId, outputId;
 
 private:

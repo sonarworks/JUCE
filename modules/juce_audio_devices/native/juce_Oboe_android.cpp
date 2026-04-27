@@ -325,6 +325,9 @@ public:
         return false;
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     static const char* const oboeTypeName;
 
 private:
