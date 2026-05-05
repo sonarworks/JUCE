@@ -402,6 +402,9 @@ public:
         }
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     int minBufferSizeOut, minBufferSizeIn;
 
 private:

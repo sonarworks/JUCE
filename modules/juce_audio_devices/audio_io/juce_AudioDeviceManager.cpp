@@ -1910,6 +1910,9 @@ private:
         int getOutputLatencyInSamples() override { return 0; }
         int getInputLatencyInSamples() override { return 0; }
 
+        void* getNativeInputDeviceHandle() const override { return {}; }
+        void* getNativeOutputDeviceHandle() const override { return {}; }
+
     private:
         void restart (double newSr, int newBs) override
         {

@@ -426,6 +426,9 @@ public:
         return latency;
     }
 
+    void* getNativeInputDeviceHandle() const override { return {}; }
+    void* getNativeOutputDeviceHandle() const override { return {}; }
+
     String inputName, outputName;
 
 private:

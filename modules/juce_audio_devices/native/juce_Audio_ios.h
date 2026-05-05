@@ -89,6 +89,9 @@ public:
    #endif
     void switchApplication();
 
+    void* getNativeInputDeviceHandle() const override;
+    void* getNativeOutputDeviceHandle() const override;
+
 private:
     //==============================================================================
     iOSAudioIODevice (iOSAudioIODeviceType*, const String&, const String&);
