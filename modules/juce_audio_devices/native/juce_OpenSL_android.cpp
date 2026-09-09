@@ -960,8 +960,6 @@ public:
     String getLastError() override                      { return lastError; }
     bool isPlaying() override                           { return callback != nullptr; }
     int getXRunCount() const noexcept override          { return (session != nullptr ? session->getXRunCount() : -1); }
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
 
     int getDefaultBufferSize() override
     {
@@ -1081,6 +1079,7 @@ public:
     void scanForDevices() override {}
 
     StringArray getDeviceNames (bool) const override                             { return StringArray (OpenSLAudioIODevice::openSLTypeName); }
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos (bool) const       { return AudioIODeviceType::DeviceInfo({ OpenSLAudioIODevice::openSLTypeName, {}); }
     int getDefaultDeviceIndex (bool) const override                              { return 0; }
     int getIndexOfDevice (AudioIODevice* device, bool) const override            { return device != nullptr ? 0 : -1; }
     bool hasSeparateInputsAndOutputs() const override                            { return false; }

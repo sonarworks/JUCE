@@ -970,9 +970,6 @@ public:
             oldCallback->audioDeviceStopped();
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     String inputId, outputId;
 
 private:
@@ -1031,6 +1028,31 @@ public:
         jassert (hasScanned); // need to call scanForDevices() before doing this
 
         return wantInputNames ? inputNames : outputNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+        auto& names = wantInputNames ? inputNames
+            : outputNames;
+        auto& ids = wantInputNames ? inputIds
+            : outputIds;
+
+        jassert(names.size() == ids.size());
+        if (names.size() != ids.size())
+        {
+            return {};
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(names.size());
+
+        for (auto i = 0; i < names.size(); ++i)
+        {
+            items.add({ names[i], ids[i] });
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool forInput) const override

@@ -1495,9 +1495,6 @@ public:
         restarter = restarterIn;
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     WeakReference<CoreAudioIODeviceType> deviceType;
     bool hadDiscontinuity;
 
@@ -1810,9 +1807,6 @@ public:
     {
         return xruns.load();
     }
-
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
 
 private:
     static constexpr auto invalidSampleTime = std::numeric_limits<std::uint64_t>::max();
@@ -2297,6 +2291,32 @@ public:
 
         return wantInputNames ? inputDeviceNames
                               : outputDeviceNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        auto& names = wantInputNames ? inputDeviceNames
+            : outputDeviceNames;
+        auto& ids = wantInputNames ? inputIds
+            : outputIds;
+
+        jassert(names.size() == ids.size());
+        if (names.size() != ids.size())
+        {
+            return {};
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(names.size());
+
+        for (auto i = 0; i < names.size(); ++i)
+        {
+            items.add({ names[i], juce::String(static_cast<juce::uint32>(ids[i])) });
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool forInput) const override

@@ -73,6 +73,12 @@ namespace juce
 class JUCE_API  AudioIODeviceType
 {
 public:
+    struct DeviceInfo
+    {
+        juce::String name;
+        juce::String id;
+    };
+
     //==============================================================================
     /** Returns the name of this type of driver that this object manages.
 
@@ -96,6 +102,15 @@ public:
                                  this determines which list of names is returned
     */
     virtual StringArray getDeviceNames (bool wantInputNames = false) const = 0;
+
+    /** Returns the list of available devices of this type.
+
+        The scanForDevices() method must have been called to create this list.
+
+        @param wantInputNames    for devices which have separate inputs and outputs
+                                 this determines which list of deviceInfo is returned
+    */
+    virtual juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames = false) const = 0;
 
     /** Returns the name of the default device.
 

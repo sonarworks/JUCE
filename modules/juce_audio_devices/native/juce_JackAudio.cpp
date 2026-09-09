@@ -426,9 +426,6 @@ public:
         return latency;
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     String inputName, outputName;
 
 private:
@@ -651,6 +648,21 @@ public:
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
         return wantInputNames ? inputNames : outputNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        auto& names = wantInputNames ? inputNames : outputNames;
+        items.ensureStorageAllocated(names.size());
+
+        for (auto i = 0; i < names.size(); ++i)
+        {
+            items.add({ names[i], {} });
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool /* forInput */) const

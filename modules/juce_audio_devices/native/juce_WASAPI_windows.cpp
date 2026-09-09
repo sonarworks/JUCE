@@ -1604,16 +1604,6 @@ public:
         }
     }
 
-    void* getNativeInputDeviceHandle() const override
-    {
-        return inputDevice ? inputDevice->device.get() : nullptr;
-    }
-
-    void* getNativeOutputDeviceHandle() const override
-    {
-        return outputDevice ? outputDevice->device.get() : nullptr;
-    }
-
     //==============================================================================
     String outputDeviceId, inputDeviceId;
     String lastError;
@@ -1812,6 +1802,32 @@ public:
 
         return wantInputNames ? devices.inputDeviceNames
                               : devices.outputDeviceNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        auto& names = wantInputNames ? devices.inputDeviceNames
+            : devices.outputDeviceNames;
+        auto& ids = wantInputNames ? devices.inputDeviceIds
+            : devices.outputDeviceIds;
+
+        jassert(names.size() == ids.size());
+        if (names.size() != ids.size())
+        {
+            return {};
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(names.size());
+
+        for (auto i = 0; i < names.size(); ++i)
+        {
+            items.add({ names[i], ids[i] });
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool /*forInput*/) const override
