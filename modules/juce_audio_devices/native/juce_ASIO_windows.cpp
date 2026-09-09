@@ -739,9 +739,6 @@ public:
         }
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
 private:
     //==============================================================================
     WeakReference<ASIOAudioIODeviceType> owner;
@@ -1480,6 +1477,35 @@ public:
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
         return deviceNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool /*wantInputNames*/) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        jassert(deviceNames.size() == classIds.size());
+        if (deviceNames.size() != classIds.size())
+        {
+            return {};
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(deviceNames.size());
+
+        for (auto i = 0; i < deviceNames.size(); ++i)
+        {
+            RPC_WSTR wstr = nullptr;
+            const auto status = UuidToStringW(&classIds.getReference(i), &wstr);
+            jassert(status == RPC_S_OK);
+            if (status != RPC_S_OK)
+            {
+                return {};
+            }
+            items.add({ deviceNames[i], reinterpret_cast<const wchar_t*>(wstr) });
+            RpcStringFreeW(&wstr);
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool) const override

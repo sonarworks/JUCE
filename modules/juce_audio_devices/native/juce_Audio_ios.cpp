@@ -1674,9 +1674,6 @@ Image iOSAudioIODevice::getIcon (int size)                          { return pim
 #endif
 void iOSAudioIODevice::switchApplication()                          { return pimpl->switchApplication(); }
 
-void* iOSAudioIODevice::getNativeInputDeviceHandle() const { return {}; }
-void* iOSAudioIODevice::getNativeOutputDeviceHandle() const { return {}; }
-
 //==============================================================================
 iOSAudioIODeviceType::iOSAudioIODeviceType()
     : AudioIODeviceType (iOSAudioDeviceName)
@@ -1692,6 +1689,7 @@ iOSAudioIODeviceType::~iOSAudioIODeviceType()
 // The list of devices is updated automatically
 void iOSAudioIODeviceType::scanForDevices() {}
 StringArray iOSAudioIODeviceType::getDeviceNames (bool) const             { return { iOSAudioDeviceName }; }
+juce::Array<AudioIODeviceType::DeviceInfo> iOSAudioIODeviceType::getDeviceInfos (bool) const { return AudioIODeviceType::DeviceInfo({ iOSAudioDeviceName, {}); }
 int iOSAudioIODeviceType::getDefaultDeviceIndex (bool) const              { return 0; }
 int iOSAudioIODeviceType::getIndexOfDevice (AudioIODevice*, bool) const   { return 0; }
 bool iOSAudioIODeviceType::hasSeparateInputsAndOutputs() const            { return false; }

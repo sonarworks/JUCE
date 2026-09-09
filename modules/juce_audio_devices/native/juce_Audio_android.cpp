@@ -402,9 +402,6 @@ public:
         }
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     int minBufferSizeOut, minBufferSizeIn;
 
 private:
@@ -451,6 +448,7 @@ public:
     //==============================================================================
     void scanForDevices() {}
     StringArray getDeviceNames (bool) const                             { return StringArray (javaAudioTypeName); }
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool) const { return AudioIODeviceType::DeviceInfo({ javaAudioTypeName, {}); }
     int getDefaultDeviceIndex (bool) const                              { return 0; }
     int getIndexOfDevice (AudioIODevice* device, bool) const            { return device != nullptr ? 0 : -1; }
     bool hasSeparateInputsAndOutputs() const                            { return false; }

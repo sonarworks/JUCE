@@ -325,9 +325,6 @@ public:
         return false;
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     static const char* const oboeTypeName;
 
 private:
@@ -1082,6 +1079,23 @@ public:
             names.add (device.name);
 
         return names;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        auto& devices = wantInputNames ? inputDevices : outputDevices;
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(devices.size());
+
+        for (auto i = 0; i < devices.size(); ++i)
+        {
+            items.add({ devices[i].name, juce::String(devices[i].id) });
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool) const override

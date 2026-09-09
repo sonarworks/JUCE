@@ -1910,9 +1910,6 @@ private:
         int getOutputLatencyInSamples() override { return 0; }
         int getInputLatencyInSamples() override { return 0; }
 
-        void* getNativeInputDeviceHandle() const override { return {}; }
-        void* getNativeOutputDeviceHandle() const override { return {}; }
-
     private:
         void restart (double newSr, int newBs) override
         {
@@ -1953,6 +1950,20 @@ private:
         StringArray getDeviceNames (bool isInput) const override
         {
             return getNames (isInput);
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool isInput) const override
+        {
+            juce::Array<AudioIODeviceType::DeviceInfo> items;
+            auto& names = getNames(isInput);
+            items.ensureStorageAllocated(names.size());
+
+            for (auto i = 0; i < names.size(); ++i)
+            {
+                items.add({ names[i], {} });
+            }
+
+            return items;
         }
 
         int getDefaultDeviceIndex (bool) const override { return 0; }

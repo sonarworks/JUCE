@@ -894,9 +894,6 @@ public:
         return outChans[0] != nullptr ? outChans[0]->xruns : -1;
     }
 
-    void* getNativeInputDeviceHandle() const override { return {}; }
-    void* getNativeOutputDeviceHandle() const override { return {}; }
-
     //==============================================================================
     StringArray inChannels, outChannels;
     int outputDeviceIndex, inputDeviceIndex;
@@ -1250,6 +1247,40 @@ public:
 
         return wantInputNames ? deviceList.inputDeviceNames
                               : deviceList.outputDeviceNames;
+    }
+
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool wantInputNames) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        auto& names = wantInputNames ? deviceList.inputDeviceNames
+            : deviceList.outputDeviceNames;
+        auto& ids = wantInputNames ? deviceList.inputGuids
+            : deviceList.outputGuids;
+
+        jassert(names.size() == ids.size());
+        if (names.size() != ids.size())
+        {
+            return {};
+        }
+
+        juce::Array<AudioIODeviceType::DeviceInfo> items;
+        items.ensureStorageAllocated(names.size());
+
+        for (auto i = 0; i < names.size(); ++i)
+        {
+            RPC_WSTR wstr = nullptr;
+            const auto status = UuidToStringW(&ids.getReference(i), &wstr);
+            jassert(status == RPC_S_OK);
+            if (status != RPC_S_OK)
+            {
+                return {};
+            }
+            items.add({ names[i], reinterpret_cast<const wchar_t*>(wstr) });
+            RpcStringFreeW(&wstr);
+        }
+
+        return items;
     }
 
     int getDefaultDeviceIndex (bool /*forInput*/) const override
