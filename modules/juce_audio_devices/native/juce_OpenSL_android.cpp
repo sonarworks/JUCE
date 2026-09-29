@@ -1079,13 +1079,14 @@ public:
     void scanForDevices() override {}
 
     StringArray getDeviceNames (bool) const override                             { return StringArray (OpenSLAudioIODevice::openSLTypeName); }
-    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos (bool) const       { return AudioIODeviceType::DeviceInfo({ OpenSLAudioIODevice::openSLTypeName, {}); }
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos (bool) const       { return AudioIODeviceType::DeviceInfo({ OpenSLAudioIODevice::openSLTypeName, {}, {}); }
     int getDefaultDeviceIndex (bool) const override                              { return 0; }
     int getIndexOfDevice (AudioIODevice* device, bool) const override            { return device != nullptr ? 0 : -1; }
     bool hasSeparateInputsAndOutputs() const override                            { return false; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
         std::unique_ptr<OpenSLAudioIODevice> dev;
 

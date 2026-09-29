@@ -1092,7 +1092,7 @@ public:
 
         for (auto i = 0; i < devices.size(); ++i)
         {
-            items.add({ devices[i].name, juce::String(devices[i].id) });
+            items.add({ devices[i].name, juce::String(devices[i].id), static_cast<unsigned short>(devices[i].numChannels) });
         }
 
         return items;
@@ -1123,7 +1123,8 @@ public:
     bool hasSeparateInputsAndOutputs() const override  { return true; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
         auto outputDeviceInfo = getDeviceInfoForName (outputDeviceName, false);
         auto inputDeviceInfo  = getDeviceInfoForName (inputDeviceName, true);

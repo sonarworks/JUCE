@@ -241,7 +241,7 @@ public:
     int getDefaultDeviceIndex (bool) const override;
     int getIndexOfDevice (AudioIODevice*, bool) const override;
     bool hasSeparateInputsAndOutputs() const override;
-    AudioIODevice* createDevice (const String&, const String&) override;
+    AudioIODevice* createDevice (const String&, const String&, const bool) override;
 
 private:
     void handleRouteChange (AVAudioSessionRouteChangeReason);
@@ -1689,12 +1689,12 @@ iOSAudioIODeviceType::~iOSAudioIODeviceType()
 // The list of devices is updated automatically
 void iOSAudioIODeviceType::scanForDevices() {}
 StringArray iOSAudioIODeviceType::getDeviceNames (bool) const             { return { iOSAudioDeviceName }; }
-juce::Array<AudioIODeviceType::DeviceInfo> iOSAudioIODeviceType::getDeviceInfos (bool) const { return AudioIODeviceType::DeviceInfo({ iOSAudioDeviceName, {}); }
+juce::Array<AudioIODeviceType::DeviceInfo> iOSAudioIODeviceType::getDeviceInfos (bool) const { return AudioIODeviceType::DeviceInfo({ iOSAudioDeviceName, {}, {}); }
 int iOSAudioIODeviceType::getDefaultDeviceIndex (bool) const              { return 0; }
 int iOSAudioIODeviceType::getIndexOfDevice (AudioIODevice*, bool) const   { return 0; }
 bool iOSAudioIODeviceType::hasSeparateInputsAndOutputs() const            { return false; }
 
-AudioIODevice* iOSAudioIODeviceType::createDevice (const String& outputDeviceName, const String& inputDeviceName)
+AudioIODevice* iOSAudioIODeviceType::createDevice (const String& outputDeviceName, const String& inputDeviceName, const bool scanSupportedFormats)
 {
     return new iOSAudioIODevice (this, outputDeviceName, inputDeviceName);
 }

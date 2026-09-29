@@ -1057,6 +1057,7 @@ class DSoundDeviceList
 public:
     StringArray outputDeviceNames, inputDeviceNames;
     Array<GUID> outputGuids, inputGuids;
+    Array<unsigned short> outputChannelCounts, inputChannelCounts;
 
     void scan()
     {
@@ -1257,9 +1258,11 @@ public:
             : deviceList.outputDeviceNames;
         auto& ids = wantInputNames ? deviceList.inputGuids
             : deviceList.outputGuids;
+        auto& channelCounts = wantInputNames ? deviceList.inputChannelCounts
+            : deviceList.outputChannelCounts;
 
-        jassert(names.size() == ids.size());
-        if (names.size() != ids.size())
+        jassert((names.size() == ids.size()) || (names.size() == channelCounts.size()));
+        if ((names.size() != ids.size()) || (names.size() != channelCounts.size()))
         {
             return {};
         }
@@ -1276,7 +1279,7 @@ public:
             {
                 return {};
             }
-            items.add({ names[i], reinterpret_cast<const wchar_t*>(wstr) });
+            items.add({ names[i], reinterpret_cast<const wchar_t*>(wstr), channelCounts[i] });
             RpcStringFreeW(&wstr);
         }
 
@@ -1303,8 +1306,10 @@ public:
     bool hasSeparateInputsAndOutputs() const override   { return true; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
+        juce::ignoreUnused(scanSupportedFormats);
         jassert (hasScanned); // need to call scanForDevices() before doing this
 
         const int outputIndex = deviceList.outputDeviceNames.indexOf (outputDeviceName);

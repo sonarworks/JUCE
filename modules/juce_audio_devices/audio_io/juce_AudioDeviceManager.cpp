@@ -1960,7 +1960,7 @@ private:
 
             for (auto i = 0; i < names.size(); ++i)
             {
-                items.add({ names[i], {} });
+                items.add({ names[i], {}, {} });
             }
 
             return items;
@@ -1975,7 +1975,7 @@ private:
 
         bool hasSeparateInputsAndOutputs() const override { return true; }
 
-        AudioIODevice* createDevice (const String& outputName, const String& inputName) override
+        AudioIODevice* createDevice (const String& outputName, const String& inputName, const bool scanSupportedFormats) override
         {
             if (inNames.contains (inputName) || outNames.contains (outputName))
                 return new MockDevice (listeners, getTypeName(), outputName, inputName);
