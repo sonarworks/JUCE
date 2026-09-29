@@ -448,13 +448,14 @@ public:
     //==============================================================================
     void scanForDevices() {}
     StringArray getDeviceNames (bool) const                             { return StringArray (javaAudioTypeName); }
-    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool) const { return AudioIODeviceType::DeviceInfo({ javaAudioTypeName, {}); }
+    juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos(bool) const { return AudioIODeviceType::DeviceInfo({ javaAudioTypeName, {}, {}); }
     int getDefaultDeviceIndex (bool) const                              { return 0; }
     int getIndexOfDevice (AudioIODevice* device, bool) const            { return device != nullptr ? 0 : -1; }
     bool hasSeparateInputsAndOutputs() const                            { return false; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName)
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats)
     {
         std::unique_ptr<AndroidAudioIODevice> dev;
 

@@ -659,7 +659,7 @@ public:
 
         for (auto i = 0; i < names.size(); ++i)
         {
-            items.add({ names[i], {} });
+            items.add({ names[i], {}, {} });
         }
 
         return items;
@@ -685,7 +685,8 @@ public:
     }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName)
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats)
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
 

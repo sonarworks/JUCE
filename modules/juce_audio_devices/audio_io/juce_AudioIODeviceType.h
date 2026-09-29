@@ -77,6 +77,7 @@ public:
     {
         juce::String name;
         juce::String id;
+        unsigned short channelsNumber;
     };
 
     //==============================================================================
@@ -137,7 +138,8 @@ public:
         scanForDevices() must have been called before this method is used.
     */
     virtual AudioIODevice* createDevice (const String& outputDeviceName,
-                                         const String& inputDeviceName) = 0;
+                                         const String& inputDeviceName,
+                                         const bool scanSupportedFormats = true) = 0;
 
     //==============================================================================
     /**

@@ -1483,8 +1483,8 @@ public:
     {
         jassert(hasScanned); // need to call scanForDevices() before doing this
 
-        jassert(deviceNames.size() == classIds.size());
-        if (deviceNames.size() != classIds.size())
+        jassert((deviceNames.size() == classIds.size()) || (deviceNames.size() == channelCounts.size()));
+        if ((deviceNames.size() != classIds.size()) || (deviceNames.size() != channelCounts.size()))
         {
             return {};
         }
@@ -1501,7 +1501,7 @@ public:
             {
                 return {};
             }
-            items.add({ deviceNames[i], reinterpret_cast<const wchar_t*>(wstr) });
+            items.add({ deviceNames[i], reinterpret_cast<const wchar_t*>(wstr), channelCounts[i]});
             RpcStringFreeW(&wstr);
         }
 
@@ -1546,7 +1546,8 @@ public:
     bool hasSeparateInputsAndOutputs() const override    { return false; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
         // ASIO can't open two different devices for input and output - they must be the same one.
         jassert (inputDeviceName == outputDeviceName || outputDeviceName.isEmpty() || inputDeviceName.isEmpty());
@@ -1578,6 +1579,7 @@ public:
 private:
     StringArray deviceNames;
     Array<CLSID> classIds;
+    Array<unsigned short> channelCounts;
 
     bool hasScanned = false;
 

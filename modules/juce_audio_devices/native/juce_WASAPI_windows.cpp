@@ -427,7 +427,8 @@ class WASAPIDeviceBase
 public:
     WASAPIDeviceBase (const ComSmartPtr<IMMDevice>& d,
                       WASAPIDeviceMode mode,
-                      WASAPIDeviceBaseDelegate& delegateIn)
+                      WASAPIDeviceBaseDelegate& delegateIn,
+                      bool scanSupportedFormats)
         : device (d),
           deviceMode (mode),
           delegate (delegateIn)
@@ -449,13 +450,20 @@ public:
         rates.addUsingDefaultSort (defaultSampleRate);
         defaultFormatChannelMask = format->dwChannelMask;
 
-        if (isExclusiveMode (deviceMode))
-            if (auto optFormat = findSupportedFormat (tempClient, defaultNumChannels, defaultSampleRate))
-                format = optFormat;
+        if (scanSupportedFormats)
+        {
+            if (isExclusiveMode(deviceMode))
+                if (auto optFormat = findSupportedFormat(tempClient, defaultNumChannels, defaultSampleRate))
+                    format = optFormat;
+        }
 
-        querySupportedBufferSizes (*format, tempClient);
-        querySupportedSampleRates (*format, tempClient);
-        maxNumChannels = queryMaxNumChannels (tempClient);
+        querySupportedBufferSizes(*format, tempClient);
+        querySupportedSampleRates(*format, tempClient);
+
+        if (scanSupportedFormats)
+        {
+            maxNumChannels = queryMaxNumChannels(tempClient);
+        }
     }
 
     virtual ~WASAPIDeviceBase()
@@ -1208,12 +1216,14 @@ public:
                          const String& typeNameIn,
                          const String& outputDeviceID,
                          const String& inputDeviceID,
-                         WASAPIDeviceMode mode)
+                         WASAPIDeviceMode mode,
+                         bool initScanSupportedFormats)
         : AudioIODevice (deviceName, typeNameIn),
           Thread (SystemStats::getJUCEVersion() + ": WASAPI"),
           outputDeviceId (outputDeviceID),
           inputDeviceId (inputDeviceID),
-          deviceMode (mode)
+          deviceMode (mode),
+          scanSupportedFormats (initScanSupportedFormats)
     {
     }
 
@@ -1658,6 +1668,7 @@ private:
     int latencyIn = 0, latencyOut = 0;
     Array<double> sampleRates;
     Array<int> bufferSizes;
+    bool scanSupportedFormats = false;
 
     enum Flags
     {
@@ -1712,9 +1723,9 @@ private:
             auto flow = getDataFlow (device);
 
             if (deviceId == inputDeviceId && flow == eCapture)
-                inputDevice.reset (new WASAPIInputDevice (device, deviceMode, *this));
+                inputDevice.reset (new WASAPIInputDevice (device, deviceMode, *this, scanSupportedFormats));
             else if (deviceId == outputDeviceId && flow == eRender)
-                outputDevice.reset (new WASAPIOutputDevice (device, deviceMode, *this));
+                outputDevice.reset (new WASAPIOutputDevice (device, deviceMode, *this, scanSupportedFormats));
         }
 
         return (outputDeviceId.isEmpty() || (outputDevice != nullptr && outputDevice->isOk()))
@@ -1812,9 +1823,11 @@ public:
             : devices.outputDeviceNames;
         auto& ids = wantInputNames ? devices.inputDeviceIds
             : devices.outputDeviceIds;
+        auto& channelCounts = wantInputNames ? devices.inputChannelCounts
+            : devices.outputChannelCounts;
 
-        jassert(names.size() == ids.size());
-        if (names.size() != ids.size())
+        jassert((names.size() == ids.size()) || (names.size() == channelCounts.size()));
+        if ((names.size() != ids.size()) || (names.size() != channelCounts.size()))
         {
             return {};
         }
@@ -1824,7 +1837,7 @@ public:
 
         for (auto i = 0; i < names.size(); ++i)
         {
-            items.add({ names[i], ids[i] });
+            items.add({ names[i], ids[i], channelCounts[i]});
         }
 
         return items;
@@ -1850,7 +1863,8 @@ public:
     bool hasSeparateInputsAndOutputs() const override    { return true; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
 
@@ -1866,7 +1880,8 @@ public:
                                                    getTypeName(),
                                                    devices.outputDeviceIds[outputIndex],
                                                    devices.inputDeviceIds [inputIndex],
-                                                   deviceMode));
+                                                   deviceMode,
+                                                   scanSupportedFormats));
 
             if (! device->initialise())
                 device = nullptr;
@@ -1880,10 +1895,11 @@ public:
     {
         StringArray outputDeviceNames, outputDeviceIds;
         StringArray inputDeviceNames, inputDeviceIds;
+        juce::Array<unsigned short> outputChannelCounts, inputChannelCounts;
 
         auto tie() const
         {
-            return std::tie (outputDeviceNames, outputDeviceIds, inputDeviceNames, inputDeviceIds);
+            return std::tie (outputDeviceNames, outputDeviceIds, outputChannelCounts, inputDeviceNames, inputDeviceIds, inputChannelCounts);
         }
 
         bool operator== (const Devices& other) const { return tie() == other.tie(); }
@@ -1986,6 +2002,7 @@ private:
 
             auto deviceId = getDeviceID (device);
             String name;
+            WORD channelsNumber = 0;
 
             {
                 ComSmartPtr<IPropertyStore> properties;
@@ -2002,6 +2019,15 @@ private:
                 if (check (properties->GetValue (PKEY_Device_FriendlyName, &value)))
                     name = value.pwszVal;
 
+                const PROPERTYKEY PKEY_AudioEngine_DeviceFormat
+                    = { { 0xf19f064d, 0x082c, 0x4e27, { 0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e, 0x4c } }, 0 };
+
+                if (check (properties->GetValue (PKEY_AudioEngine_DeviceFormat, &value)))
+                {
+                    auto* wf = reinterpret_cast<WAVEFORMATEX*>(value.blob.pBlobData);
+                    channelsNumber = wf->nChannels;
+                }
+
                 PropVariantClear (&value);
             }
 
@@ -2012,12 +2038,14 @@ private:
                 const int index = (deviceId == defaultRenderer) ? 0 : -1;
                 result.outputDeviceIds.insert (index, deviceId);
                 result.outputDeviceNames.insert (index, name);
+                result.outputChannelCounts.insert(index, channelsNumber);
             }
             else if (flow == eCapture)
             {
                 const int index = (deviceId == defaultCapture) ? 0 : -1;
                 result.inputDeviceIds.insert (index, deviceId);
                 result.inputDeviceNames.insert (index, name);
+                result.inputChannelCounts.insert(index, channelsNumber);
             }
         }
 

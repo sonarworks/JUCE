@@ -2301,9 +2301,11 @@ public:
             : outputDeviceNames;
         auto& ids = wantInputNames ? inputIds
             : outputIds;
+        auto& channelCounts = wantInputNames ? inputChannelCounts
+            : outputChannelCounts;
 
-        jassert(names.size() == ids.size());
-        if (names.size() != ids.size())
+        jassert((names.size() == ids.size()) || (names.size() == channelCounts.size()));
+        if ((names.size() != ids.size()) || (names.size() != channelCounts.size()))
         {
             return {};
         }
@@ -2313,7 +2315,7 @@ public:
 
         for (auto i = 0; i < names.size(); ++i)
         {
-            items.add({ names[i], juce::String(static_cast<juce::uint32>(ids[i])) });
+            items.add({ names[i], juce::String(static_cast<juce::uint32>(ids[i])), channelCounts[i] });
         }
 
         return items;
@@ -2361,7 +2363,8 @@ public:
     bool hasSeparateInputsAndOutputs() const override    { return true; }
 
     AudioIODevice* createDevice (const String& outputDeviceName,
-                                 const String& inputDeviceName) override
+                                 const String& inputDeviceName,
+                                 const bool scanSupportedFormats) override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
 
@@ -2403,6 +2406,7 @@ public:
 private:
     StringArray inputDeviceNames, outputDeviceNames;
     Array<AudioDeviceID> inputIds, outputIds;
+    Array<unssgned short> inputChannelCounts, outputChannelCounts;
 
     bool hasScanned = false;
 
