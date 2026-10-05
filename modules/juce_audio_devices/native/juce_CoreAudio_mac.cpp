@@ -2367,6 +2367,7 @@ public:
                                  const bool scanSupportedFormats) override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
+        juce::ignoreUnused(scanSupportedFormats);
 
         auto inputIndex  = inputDeviceNames.indexOf (inputDeviceName);
         auto outputIndex = outputDeviceNames.indexOf (outputDeviceName);
@@ -2406,7 +2407,7 @@ public:
 private:
     StringArray inputDeviceNames, outputDeviceNames;
     Array<AudioDeviceID> inputIds, outputIds;
-    Array<unssgned short> inputChannelCounts, outputChannelCounts;
+    Array<unsigned short> inputChannelCounts, outputChannelCounts;
 
     bool hasScanned = false;
 
