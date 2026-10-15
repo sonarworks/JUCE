@@ -80,6 +80,15 @@ public:
         unsigned short channelsNumber;
     };
 
+    enum class DefaultDeviceRole
+    {
+        Console = 0,
+        Multimedia = 1,
+        Communications = 2,
+
+        Invalid
+    };
+
     //==============================================================================
     /** Returns the name of this type of driver that this object manages.
 
@@ -122,6 +131,15 @@ public:
     */
     virtual int getDefaultDeviceIndex (bool forInput) const = 0;
 
+    /** Returns the id of the default device.
+
+    This will be one of the id from the getDeviceInfos() list.
+
+    @param forInput     if true, this means that a default input device should be
+                        returned; if false, it should return the default output
+    */
+    virtual String getDefaultDeviceIdByRole(bool forInput, DefaultDeviceRole role) const = 0;
+
     /** Returns the index of a given device in the list of device names.
         If asInput is true, it shows the index in the inputs list, otherwise it
         looks for it in the outputs list.
@@ -158,6 +176,12 @@ public:
 
         /** Called when the list of available audio devices changes. */
         virtual void audioDeviceListChanged() = 0;
+        /** Called when the names of available audio devices change. */
+        virtual void audioDeviceNamesChanged() = 0;
+        /** Called when the number of channels of available audio devices changes. */
+        virtual void audioDeviceChannelsNumberChanged() = 0;
+        /** Called when the default audio devices change. */
+        virtual void audioDefaultDeviceChanged(const String& /*id*/, const DefaultDeviceRole /*role*/) = 0;
     };
 
     /** Adds a listener that will be called when this type of device is added or
@@ -204,6 +228,12 @@ protected:
 
     /** Synchronously calls all the registered device list change listeners. */
     void callDeviceChangeListeners();
+    /** Synchronously calls all the registered device names change listeners. */
+    void callDeviceNamesChangeListeners();
+    /** Synchronously calls all the registered device number of channels change listeners. */
+    void callDeviceChannelsNumberChangeListeners();
+    /** Synchronously calls all the registered default device change listeners. */
+    void callDefaultDeviceChangeListeners(const String& id, const DefaultDeviceRole role);
 
 private:
     String typeName;

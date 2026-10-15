@@ -1849,6 +1849,16 @@ public:
         return 0;
     }
 
+    String getDefaultDeviceIdByRole(bool forInput, DefaultDeviceRole role) const override
+    {
+        jassert(hasScanned); // need to call scanForDevices() before doing this
+
+        if (enumerator == nullptr)
+            return {};
+
+        return getDefaultEndpoint(enumerator, forInput, getERoleByDefaultDeviceRole(role));
+    }
+
     int getIndexOfDevice (AudioIODevice* device, bool asInput) const override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
@@ -1908,6 +1918,9 @@ public:
 
     Devices devices;
 
+    CriticalSection defaultDeviceEventsLock;
+    juce::Array<std::pair<juce::String /*id*/, DefaultDeviceRole>> defaultDeviceEvents;
+
 private:
     DeviceChangeDetector deviceChangeDetector { L"Windows Audio", [this] { systemDeviceChanged(); } };
     WASAPIDeviceMode deviceMode;
@@ -1924,7 +1937,17 @@ private:
         JUCE_COMRESULT OnDeviceAdded (LPCWSTR)                             override { return notify(); }
         JUCE_COMRESULT OnDeviceRemoved (LPCWSTR)                           override { return notify(); }
         JUCE_COMRESULT OnDeviceStateChanged (LPCWSTR, DWORD)               override { return notify(); }
-        JUCE_COMRESULT OnDefaultDeviceChanged (EDataFlow, ERole, LPCWSTR)  override { return notify(); }
+        JUCE_COMRESULT OnDefaultDeviceChanged (EDataFlow, ERole role, LPCWSTR id)  override
+        {
+            if (device != nullptr)
+            {
+                const ScopedLock sl (device->defaultDeviceEventsLock);
+                // NULL means no device is available for this role/direction
+                // The juce::String constructor can handle NULL
+                device->defaultDeviceEvents.add ({ id, getDefaultDeviceRoleByERole (role) });
+            }
+            return notify();
+        }
         JUCE_COMRESULT OnPropertyValueChanged (LPCWSTR, const PROPERTYKEY) override { return notify(); }
 
     private:
@@ -1944,13 +1967,13 @@ private:
     ComSmartPtr<ChangeNotificationClient> notifyClient;
 
     //==============================================================================
-    static String getDefaultEndpoint (IMMDeviceEnumerator* enumerator, bool forCapture)
+    static String getDefaultEndpoint (IMMDeviceEnumerator* enumerator, bool forCapture, juce::ERole eRole)
     {
         String s;
         ComSmartPtr<IMMDevice> dev;
 
         if (check (enumerator->GetDefaultAudioEndpoint (forCapture ? eCapture : eRender,
-                                                        eMultimedia, dev.resetAndGetPointerAddress())))
+            eRole, dev.resetAndGetPointerAddress())))
         {
             WCHAR* deviceId = nullptr;
 
@@ -1976,8 +1999,8 @@ private:
             enumerator->RegisterEndpointNotificationCallback (notifyClient);
         }
 
-        auto defaultRenderer = getDefaultEndpoint (enumerator, false);
-        auto defaultCapture  = getDefaultEndpoint (enumerator, true);
+        auto defaultRenderer = getDefaultEndpoint (enumerator, false, eMultimedia);
+        auto defaultCapture  = getDefaultEndpoint (enumerator, true, eMultimedia);
 
         ComSmartPtr<IMMDeviceCollection> deviceCollection;
         UINT32 numDevices = 0;
@@ -2056,15 +2079,97 @@ private:
     }
 
     //==============================================================================
+    bool idsListChanged(juce::StringArray deviceIds,
+        juce::StringArray newDeviceIds)
+    {
+        deviceIds.sort(true);
+        newDeviceIds.sort(true);
+
+        return (deviceIds != newDeviceIds);
+    }
+
+    //==============================================================================
+    bool nameChanged(const juce::StringArray& names,
+        const juce::StringArray& ids,
+        const juce::StringArray& newNames,
+        const juce::StringArray& newIds)
+    {
+        for (int i = 0; i < newIds.size(); ++i)
+        {
+            const int oldIndex = ids.indexOf(newIds[i]);
+
+            if (oldIndex < 0)
+                continue;
+
+            if (names[oldIndex] != newNames[i])
+                return true;
+        }
+
+        return false;
+    }
+
+    //==============================================================================
+    bool channelCountsChanged(const juce::Array<unsigned short>& channelCounts,
+        const juce::StringArray& ids,
+        const juce::Array<unsigned short>& newChannelCounts,
+        const juce::StringArray& newIds)
+    {
+        for (int i = 0; i < newIds.size(); ++i)
+        {
+            const int oldIndex = ids.indexOf(newIds[i]);
+
+            if (oldIndex < 0)
+                continue;
+
+            if (channelCounts[oldIndex] != newChannelCounts[i])
+                return true;
+        }
+
+        return false;
+    }
+
+    //==============================================================================
     void systemDeviceChanged()
     {
         const auto newDevices = scan();
 
-        if (std::exchange (devices, newDevices) != newDevices)
+        // Calling scan() changes the order of devices, setting the default device first in the list, so we need to check individually whether each type has changed
+        const auto outputDeviceIdsChanged = idsListChanged(devices.outputDeviceIds, newDevices.outputDeviceIds);
+        const auto inputDeviceIdsChanged = idsListChanged(devices.inputDeviceIds, newDevices.inputDeviceIds);
+        const auto outputDeviceNamesChanged = nameChanged(devices.outputDeviceNames, devices.outputDeviceIds, newDevices.outputDeviceNames, newDevices.outputDeviceIds);
+        const auto inputDeviceNamesChanged = nameChanged(devices.inputDeviceNames, devices.inputDeviceIds, newDevices.inputDeviceNames, newDevices.inputDeviceIds);
+        const auto outputChannelCountsChanged = channelCountsChanged(devices.outputChannelCounts, devices.outputDeviceIds, newDevices.outputChannelCounts, newDevices.outputDeviceIds);
+        const auto inputChannelCountsChanged = channelCountsChanged(devices.inputChannelCounts, devices.inputDeviceIds, newDevices.inputChannelCounts, newDevices.inputDeviceIds);
+
+        if (outputDeviceIdsChanged || inputDeviceIdsChanged)
         {
             hasScanned = true;
             callDeviceChangeListeners();
         }
+        if (outputDeviceNamesChanged || inputDeviceNamesChanged)
+        {
+            hasScanned = true;
+            callDeviceNamesChangeListeners();
+        }
+        if (outputChannelCountsChanged || inputChannelCountsChanged)
+        {
+            hasScanned = true;
+            callDeviceChannelsNumberChangeListeners();
+        }
+
+        decltype (defaultDeviceEvents) eventsToNotify;
+
+        {
+            const ScopedLock sl (defaultDeviceEventsLock);
+            eventsToNotify.swapWith (defaultDeviceEvents);
+        }
+
+        for (auto& member : eventsToNotify)
+        {
+            callDefaultDeviceChangeListeners(member.first, member.second);
+        }
+
+        std::exchange(devices, newDevices);
     }
 
     //==============================================================================
@@ -2076,6 +2181,39 @@ private:
 
         jassertfalse;
         return {};
+    }
+
+    //==============================================================================
+    static DefaultDeviceRole getDefaultDeviceRoleByERole(ERole role)
+    {
+        switch (role)
+        {
+        case ERole::eConsole:
+            return DefaultDeviceRole::Console;
+        case ERole::eMultimedia:
+            return DefaultDeviceRole::Multimedia;
+        case ERole::eCommunications:
+            return DefaultDeviceRole::Communications;
+        default:
+            return DefaultDeviceRole::Invalid;
+        }
+    }
+
+    //==============================================================================
+    static ERole getERoleByDefaultDeviceRole(juce::AudioIODeviceType::DefaultDeviceRole role)
+    {
+        switch (role)
+        {
+        case juce::AudioIODeviceType::DefaultDeviceRole::Console:
+            return ERole::eConsole;
+        case juce::AudioIODeviceType::DefaultDeviceRole::Multimedia:
+            return ERole::eMultimedia;
+        case juce::AudioIODeviceType::DefaultDeviceRole::Communications:
+            return ERole::eCommunications;
+        default:
+            jassertfalse;
+            return ERole::eConsole;
+        }
     }
 
     //==============================================================================
