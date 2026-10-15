@@ -53,6 +53,21 @@ void AudioIODeviceType::callDeviceChangeListeners()
     listeners.call ([] (Listener& l) { l.audioDeviceListChanged(); });
 }
 
+void AudioIODeviceType::callDeviceNamesChangeListeners()
+{
+    listeners.call([](Listener& l) { l.audioDeviceNamesChanged(); });
+}
+
+void AudioIODeviceType::callDeviceChannelsNumberChangeListeners()
+{
+    listeners.call([](Listener& l) { l.audioDeviceChannelsNumberChanged(); });
+}
+
+void AudioIODeviceType::callDefaultDeviceChangeListeners(const String& id, const DefaultDeviceRole role)
+{
+    listeners.call([&id, &role](Listener& l) { l.audioDefaultDeviceChanged(id, role); });
+}
+
 //==============================================================================
 #if JUCE_MAC
  AudioIODeviceType* AudioIODeviceType::createAudioIODeviceType_CoreAudio()  { return new CoreAudioClasses::CoreAudioIODeviceType(); }

@@ -1065,6 +1065,12 @@ public:
         return idx >= 0 ? idx : 0;
     }
 
+    String getDefaultDeviceIdByRole (bool /*forInput*/, DefaultDeviceRole /*role*/) const override
+    {
+        jassert (hasScanned); // need to call scanForDevices() before doing this
+        return {};
+    }
+
     bool hasSeparateInputsAndOutputs() const override { return true; }
 
     int getIndexOfDevice (AudioIODevice* device, bool asInput) const override

@@ -1103,6 +1103,11 @@ public:
         return 0;
     }
 
+    String getDefaultDeviceIdByRole (bool, DefaultDeviceRole) const override
+    {
+        return {};
+    }
+
     int getIndexOfDevice (AudioIODevice* device, bool asInput) const override
     {
         if (auto oboeDevice = static_cast<OboeAudioIODevice*> (device))

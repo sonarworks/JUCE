@@ -2347,6 +2347,12 @@ public:
         return 0;
     }
 
+    String getDefaultDeviceIdByRole (bool /*forInput*/, DefaultDeviceRole /*role*/) const override
+    {
+        jassert (hasScanned); // need to call scanForDevices() before doing this
+        return {};
+    }
+
     int getIndexOfDevice (AudioIODevice* device, bool asInput) const override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this

@@ -1081,6 +1081,7 @@ public:
     StringArray getDeviceNames (bool) const override                             { return StringArray (OpenSLAudioIODevice::openSLTypeName); }
     juce::Array<AudioIODeviceType::DeviceInfo> getDeviceInfos (bool) const       { return AudioIODeviceType::DeviceInfo({ OpenSLAudioIODevice::openSLTypeName, {}, {}); }
     int getDefaultDeviceIndex (bool) const override                              { return 0; }
+    String getDefaultDeviceIdByRole (bool, DefaultDeviceRole) const override     { return {}; }
     int getIndexOfDevice (AudioIODevice* device, bool) const override            { return device != nullptr ? 0 : -1; }
     bool hasSeparateInputsAndOutputs() const override                            { return false; }
 

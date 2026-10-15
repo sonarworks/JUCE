@@ -192,6 +192,18 @@ private:
         owner.audioDeviceListChanged();
     }
 
+    void audioDeviceNamesChanged() override
+    {
+    }
+
+    void audioDeviceChannelsNumberChanged() override
+    {
+    }
+
+    void audioDefaultDeviceChanged(const String& /*id*/, const AudioIODeviceType::DefaultDeviceRole /*role*/) override
+    {
+    }
+
     AudioDeviceManager& owner;
     CallbackMaxSizeEnforcer enforcer { *this };
 
@@ -1967,6 +1979,8 @@ private:
         }
 
         int getDefaultDeviceIndex (bool) const override { return 0; }
+
+        String getDefaultDeviceIdByRole (bool, DefaultDeviceRole) const override { return {}; }
 
         int getIndexOfDevice (AudioIODevice* device, bool isInput) const override
         {
