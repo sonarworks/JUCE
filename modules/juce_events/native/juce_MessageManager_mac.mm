@@ -102,6 +102,16 @@ struct AppDelegateClass final : public ObjCClass<NSObject>
             }
         });
 
+        // A Dock click or a launch from Finder while the app runs reopens it: tell the app as if
+        // another instance had started with no arguments.
+        addMethod (@selector (applicationShouldHandleReopen:hasVisibleWindows:), [] (id /*self*/, SEL, NSApplication*, BOOL)
+        {
+            if (auto* app = JUCEApplicationBase::getInstance())
+                app->anotherInstanceStarted ({});
+
+            return YES;
+        });
+
         addMethod (@selector (applicationDidBecomeActive:), [] (id /*self*/, SEL, NSNotification*)  { focusChanged(); });
         addMethod (@selector (applicationDidResignActive:), [] (id /*self*/, SEL, NSNotification*)  { focusChanged(); });
         addMethod (@selector (applicationWillUnhide:),      [] (id /*self*/, SEL, NSNotification*)  { focusChanged(); });
