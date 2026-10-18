@@ -628,7 +628,7 @@ public:
     };
 
     /** This callback occurs on the message thread when a process of the browser fails.
-        Currently only reported by WebView2 on Windows.
+        Reported by WebView2 on Windows, and by WKWebView on macOS as renderProcessExited only.
     */
     virtual void webProcessFailed (WebProcessFailure failure);
 

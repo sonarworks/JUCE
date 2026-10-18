@@ -462,6 +462,13 @@ struct WebViewDelegateClass final : public ObjCClass<NSObject>
                            displayError (&connector->getBrowser(), error);
                    });
 
+        addMethod (@selector (webViewWebContentProcessDidTerminate:),
+                   [] (id self, SEL, WKWebView*)
+                   {
+                       if (auto* connector = getConnector (self))
+                           connector->getBrowser().webProcessFailed (WebBrowserComponent::WebProcessFailure::renderProcessExited);
+                   });
+
         addMethod (@selector (webViewDidClose:),
                    [] (id self, SEL, WKWebView*)
                    {
