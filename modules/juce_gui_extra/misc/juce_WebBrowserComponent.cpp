@@ -41,6 +41,7 @@ bool WebBrowserComponent::pageAboutToLoad ([[maybe_unused]] const String& newURL
 void WebBrowserComponent::pageFinishedLoading ([[maybe_unused]] const String& url)            {}
 bool WebBrowserComponent::pageLoadHadNetworkError ([[maybe_unused]] const String& errorInfo)  { return true; }
 void WebBrowserComponent::windowCloseRequest()                                                {}
+void WebBrowserComponent::webProcessFailed ([[maybe_unused]] WebProcessFailure failure)        {}
 void WebBrowserComponent::newWindowAttemptingToLoad ([[maybe_unused]] const String& newURL)   {}
 
 // At least this much code has to be injected as user script, since the native backend functions
