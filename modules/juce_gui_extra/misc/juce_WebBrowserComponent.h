@@ -259,12 +259,22 @@ public:
                 return withMember (*this, &AppleWkWebView::acceptsFirstMouse, false);
             }
 
+            /** Lets Safari's Web Inspector attach to the WebView (macOS 13.3 and later). Debug
+                builds are always inspectable.
+            */
+            [[nodiscard]] AppleWkWebView withInspectable (bool x = true) const
+            {
+                return withMember (*this, &AppleWkWebView::inspectable, x);
+            }
+
             auto getAllowAccessToEnclosingDirectory() const { return allowAccessToEnclosingDirectory; }
             auto getAcceptsFirstMouse() const { return acceptsFirstMouse; }
+            auto getInspectable() const { return inspectable; }
 
         private:
             bool allowAccessToEnclosingDirectory = false;
             bool acceptsFirstMouse = true;
+            bool inspectable = false;
         };
 
         /** Specifies options that apply to the Windows implementation when the WebView2 feature is

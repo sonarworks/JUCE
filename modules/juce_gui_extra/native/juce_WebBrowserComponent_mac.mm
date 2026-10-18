@@ -908,6 +908,15 @@ public:
                                                       configuration: config.get()]);
 
         setLastFocusChangeHandle (webView.get(), &lastFocusChange);
+
+        if (@available (macOS 13.3, *))
+        {
+           #if JUCE_DEBUG
+            [webView.get() setInspectable: YES];
+           #else
+            [webView.get() setInspectable: browserOptions.getAppleWkWebViewOptions().getInspectable()];
+           #endif
+        }
        #else
         webView.reset ([[WKWebView alloc] initWithFrame: CGRectMake (0, 0, 100.0f, 100.0f)
                                           configuration: config.get()]);
