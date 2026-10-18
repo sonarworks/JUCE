@@ -619,6 +619,19 @@ public:
     */
     virtual void windowCloseRequest();
 
+    /** A process the browser runs on failed. */
+    enum class WebProcessFailure
+    {
+        renderProcessExited,        /**< The page is gone; reloading it starts a new one. */
+        renderProcessUnresponsive,  /**< The page hangs. */
+        browserProcessExited        /**< The browser itself is gone; only a new component recovers. */
+    };
+
+    /** This callback occurs on the message thread when a process of the browser fails.
+        Currently only reported by WebView2 on Windows.
+    */
+    virtual void webProcessFailed (WebProcessFailure failure);
+
     /** This callback occurs when the browser attempts to load a URL in a new window.
         This won't actually load the window but gives you a chance to either launch a
         new window yourself or just load the URL into the current window with goToURL().

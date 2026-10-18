@@ -794,6 +794,25 @@ private:
                     return S_OK;
                 }).Get(), &windowCloseRequestedToken);
 
+            webView->add_ProcessFailed (Callback<ICoreWebView2ProcessFailedEventHandler> (
+                [this] (ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT
+                {
+                    COREWEBVIEW2_PROCESS_FAILED_KIND kind{};
+
+                    if (args == nullptr || FAILED (args->get_ProcessFailedKind (&kind)))
+                        return S_OK;
+
+                    // GPU, utility and frame processes are restarted by WebView2 itself
+                    if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED)
+                        owner.webProcessFailed (WebBrowserComponent::WebProcessFailure::renderProcessExited);
+                    else if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE)
+                        owner.webProcessFailed (WebBrowserComponent::WebProcessFailure::renderProcessUnresponsive);
+                    else if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED)
+                        owner.webProcessFailed (WebBrowserComponent::WebProcessFailure::browserProcessExited);
+
+                    return S_OK;
+                }).Get(), &processFailedToken);
+
             webView->add_NavigationCompleted (Callback<ICoreWebView2NavigationCompletedEventHandler> (
                 [this] (ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT
                 {
@@ -984,6 +1003,9 @@ private:
 
             if (windowCloseRequestedToken.value != 0)
                 webView->remove_WindowCloseRequested (windowCloseRequestedToken);
+
+            if (processFailedToken.value != 0)
+                webView->remove_ProcessFailed (processFailedToken);
 
             if (navigationCompletedToken.value != 0)
                 webView->remove_NavigationCompleted (navigationCompletedToken);
@@ -1215,6 +1237,7 @@ private:
     EventRegistrationToken navigationStartingToken   { 0 },
                            newWindowRequestedToken   { 0 },
                            windowCloseRequestedToken { 0 },
+                           processFailedToken        { 0 },
                            navigationCompletedToken  { 0 },
                            webResourceRequestedToken { 0 },
                            moveFocusRequestedToken   { 0 },
