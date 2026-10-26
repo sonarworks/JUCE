@@ -909,4 +909,141 @@ String XmlDocument::getParameterEntity (const String& entity)
     return entity;
 }
 
+//==============================================================================
+//==============================================================================
+#if JUCE_UNIT_TESTS
+
+class XmlDocumentTests final : public UnitTest
+{
+public:
+    XmlDocumentTests()
+        : UnitTest ("XmlDocument", UnitTestCategories::xml)
+    {}
+
+    void runTest() override
+    {
+        beginTest ("Attribute values");
+        {
+            expectValue ("<a v=\"plain\"/>", "plain");
+            expectValue ("<a v=\"\"/>", "");
+            expectValue ("<a v='single \"double\" inside'/>", "single \"double\" inside");
+            expectValue ("<a v=\"double 'single' inside\"/>", "double 'single' inside");
+
+            const auto utf8 = String::fromUTF8 ("\xc4\x93\xe6\x97\xa5\xf0\x9f\x98\x80");
+            expectValue ("<a v=\"" + utf8 + "\"/>", utf8);
+        }
+
+        beginTest ("Only the opening quote closes an attribute value");
+        {
+            expectValue ("<a v=\"&quot;&#34;&#x22;\"/>", "\"\"\"");
+            expectValue ("<a v='&apos;&#39;&#x27;'/>", "'''");
+
+            // left and right double quotes, fullwidth quotation mark, right single quote
+            const auto lookalikes = String::fromUTF8 ("\xe2\x80\x9c\xe2\x80\x9d\xef\xbc\x82\xe2\x80\x99");
+            expectValue ("<a v=\"" + lookalikes + "\"/>", lookalikes);
+            expectValue ("<a v='" + lookalikes + "'/>", lookalikes);
+
+            // nor does a lookalike open one
+            XmlDocument document ("<a v=" + lookalikes + "/>");
+            const auto element = document.getDocumentElement();
+            expect (element != nullptr && ! element->hasAttribute ("v"));
+        }
+
+        beginTest ("Entities in attribute values");
+        {
+            expectValue ("<a v=\"&amp;first\"/>", "&first");
+            expectValue ("<a v=\"last&amp;\"/>", "last&");
+            expectValue ("<a v=\"a&amp;b&lt;c\"/>", "a&b<c");
+            expectValue ("<a v=\"&amp;&amp;&amp;\"/>", "&&&");
+            expectValue ("<a v=\"&amp;&quot;&apos;&lt;&gt;\"/>", "&\"'<>");
+            expectValue ("<a v=\"&#65;&#x42;&#X43;&#x1F600;\"/>", "ABC" + String::charToString ((juce_wchar) 0x1f600));
+            expectValue ("<!DOCTYPE a [<!ENTITY e \"from the DTD\">]><a v=\"&e;\"/>", "from the DTD");
+        }
+
+        // The cases below are JUCE leniency, not XML 1.0: XML 1.0 makes each of them a fatal error,
+        // or reads it differently, as noted.
+        beginTest ("Lenient entities in attribute values");
+        {
+            // entity names are case-sensitive in XML 1.0
+            expectValue ("<a v=\"&AMP;&Quot;&APOS;&LT;&Gt;\"/>", "&\"'<>");
+
+            // &#0; is not an XML character
+            expectValue ("<a v=\"x&#0;y\"/>", "xy");
+
+            expectValue ("<a v=\"x&foo;y\"/>", "xfooy", "unknown entity");
+            expectValue ("<a v=\"&#xZZ;\"/>", "Z;", "illegal escape sequence");
+            expectValue ("<a v=\"&#x123456789;\"/>", String::charToString ((juce_wchar) 0x12345678) + ";", "illegal escape sequence");
+            expectValue ("<a v=\"&#;\"/>", "&;", "illegal escape sequence");
+            expectValue ("<a v=\"&#-1;\"/>", "&-1;", "illegal escape sequence");
+
+            // XML 1.0 reads this as 'A'; JUCE stops a decimal reference after 12 digits
+            expectValue ("<a v=\"&#0000000000065;\"/>", String::charToString ((juce_wchar) 6) + ";", "illegal escape sequence");
+
+            // no semicolon follows anywhere: the ampersand is kept and parsing stops without an error
+            expectValue ("<a v=\"x&\"/>", "x&");
+        }
+
+        beginTest ("Long attribute values");
+        {
+            expectValue ("<a v=\"" + String::repeatedString ("&quot;x", 20000) + "\"/>",
+                         String::repeatedString ("\"x", 20000));
+        }
+
+        beginTest ("Attribute values cut off by the end of the document");
+        {
+            expectNoElement ("<a v=\"abc", "unmatched quotes");
+            expectNoElement ("<a v=\"abc&amp;", "unmatched quotes");
+            expectNoElement ("<a v=\"", "unmatched quotes");
+            expectNoElement ("<a v=\"&#12", "unmatched quotes");
+        }
+
+        beginTest ("Entities in element text");
+        {
+            expectText ("<a>x &amp; &lt;b&gt; &#65;</a>", "x & <b> A");
+            expectText ("<a>&lt;</a>", "<");
+            expectText ("<a>&#0;z</a>", "z"); // JUCE leniency: &#0; is not an XML character
+
+            XmlDocument document ("<!DOCTYPE a [<!ENTITY e \"<b/>\">]><a>&e;</a>");
+            const auto element = document.getDocumentElement();
+            expect (element != nullptr && element->getChildByName ("b") != nullptr);
+        }
+    }
+
+private:
+    void expectValue (const String& text, const String& expectedValue, const String& expectedError = {})
+    {
+        XmlDocument document (text);
+        const auto element = document.getDocumentElement();
+
+        expect (element != nullptr, text);
+
+        if (element != nullptr)
+            expectEquals (element->getStringAttribute ("v"), expectedValue, text);
+
+        expectEquals (document.getLastParseError(), expectedError, text);
+    }
+
+    void expectText (const String& text, const String& expectedText)
+    {
+        XmlDocument document (text);
+        const auto element = document.getDocumentElement();
+
+        expect (element != nullptr, text);
+
+        if (element != nullptr)
+            expectEquals (element->getAllSubText(), expectedText, text);
+    }
+
+    void expectNoElement (const String& text, const String& expectedError)
+    {
+        XmlDocument document (text);
+        expect (document.getDocumentElement() == nullptr, text);
+        expectEquals (document.getLastParseError(), expectedError, text);
+    }
+};
+
+static XmlDocumentTests xmlDocumentTests;
+
+#endif
+
 }
