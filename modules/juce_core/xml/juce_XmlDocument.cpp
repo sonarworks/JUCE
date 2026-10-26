@@ -701,6 +701,12 @@ void XmlDocument::readEntity (MemoryOutputStream& result)
 
             while (input[0] != ';')
             {
+                if (input[0] == 0)
+                {
+                    setLastError ("unexpected end of input", true);
+                    return;
+                }
+
                 auto hexValue = CharacterFunctions::getHexDigitValue (input[0]);
 
                 if (hexValue < 0 || ++numChars > 8)
@@ -995,6 +1001,14 @@ public:
             expectNoElement ("<a v=\"abc&amp;", "unmatched quotes");
             expectNoElement ("<a v=\"", "unmatched quotes");
             expectNoElement ("<a v=\"&#12", "unmatched quotes");
+            expectNoElement ("<a v=\"&#x41", "unmatched quotes");
+
+            // a NUL ends the text; what follows it stands for memory past the end
+            const char withNul[] = "<a v=\"&#x41\0\" w=\"past the end\"/>";
+            XmlDocument document ((String()));
+            document.setInputSource (new MemoryInputSource (MemoryBlock (withNul, sizeof (withNul) - 1)));
+            expect (document.getDocumentElement() == nullptr);
+            expectEquals (document.getLastParseError(), String ("unmatched quotes"));
         }
 
         beginTest ("Entities in element text");
@@ -1010,6 +1024,17 @@ public:
     }
 
 private:
+    struct MemoryInputSource final : public InputSource
+    {
+        explicit MemoryInputSource (MemoryBlock b) : block (std::move (b)) {}
+
+        InputStream* createInputStream() override                 { return new MemoryInputStream (block, false); }
+        InputStream* createInputStreamFor (const String&) override { return nullptr; }
+        int64 hashCode() const override                           { return 0; }
+
+        MemoryBlock block;
+    };
+
     void expectValue (const String& text, const String& expectedValue, const String& expectedError = {})
     {
         XmlDocument document (text);
