@@ -350,57 +350,41 @@ void XmlDocument::skipNextWhiteSpace()
     }
 }
 
-void XmlDocument::readQuotedString (String& result)
+String XmlDocument::readQuotedString()
 {
     auto quote = readNextChar();
 
-    // Collected in a stream and added to the result once: appending each piece to the String
-    // copies the whole value every time, which makes long values quadratic to read
+    // Collected in a stream: appending each piece to a String copies the whole value every time
     MemoryOutputStream value;
 
     while (! outOfData)
     {
-        auto c = readNextChar();
+        auto c = *input;
 
         if (c == quote)
+        {
+            ++input;
             break;
-
-        --input;
+        }
 
         if (c == '&')
         {
             readEntity (value);
+            continue;
         }
-        else
+
+        if (c == 0)
         {
-            for (;;)
-            {
-                auto character = *input;
-
-                if (character == quote)
-                {
-                    ++input;
-                    result += value.toUTF8();
-                    return;
-                }
-
-                if (character == '&')
-                    break;
-
-                if (character == 0)
-                {
-                    setLastError ("unmatched quotes", false);
-                    outOfData = true;
-                    break;
-                }
-
-                value.appendUTF8Char (character);
-                ++input;
-            }
+            setLastError ("unmatched quotes", false);
+            outOfData = true;
+            break;
         }
+
+        value.appendUTF8Char (c);
+        ++input;
     }
 
-    result += value.toUTF8();
+    return value.toUTF8();
 }
 
 XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
@@ -476,7 +460,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
                         if (nextChar == '"' || nextChar == '\'')
                         {
                             auto* newAtt = new XmlElement::XmlAttributeNode (attNameStart, attNameEnd);
-                            readQuotedString (newAtt->attribute.value);
+                            newAtt->attribute.value = readQuotedString();
                             attributeAppender.append (newAtt);
                             continue;
                         }

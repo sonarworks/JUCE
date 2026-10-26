@@ -175,7 +175,7 @@ private:
     juce_wchar readNextChar() noexcept;
     XmlElement* readNextElement (bool alsoParseSubElements);
     void readChildElements (XmlElement&);
-    void readQuotedString (String&);
+    String readQuotedString();
     void readEntity (OutputStream&);
 
     String getFileContents (const String&) const;
