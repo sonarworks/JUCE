@@ -759,7 +759,9 @@ void XmlDocument::readEntity (MemoryOutputStream& result)
 
         // &#0; adds nothing: a 0 in the stream would end the value
         if (charCode != 0)
+        {
             result.appendUTF8Char ((juce_wchar) charCode);
+        }
     }
     else
     {
@@ -1043,7 +1045,9 @@ private:
         expect (element != nullptr, text);
 
         if (element != nullptr)
+        {
             expectEquals (element->getStringAttribute ("v"), expectedValue, text);
+        }
 
         expectEquals (document.getLastParseError(), expectedError, text);
     }
@@ -1056,7 +1060,9 @@ private:
         expect (element != nullptr, text);
 
         if (element != nullptr)
+        {
             expectEquals (element->getAllSubText(), expectedText, text);
+        }
     }
 
     void expectNoElement (const String& text, const String& expectedError)
