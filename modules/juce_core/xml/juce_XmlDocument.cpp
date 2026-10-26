@@ -350,54 +350,43 @@ void XmlDocument::skipNextWhiteSpace()
     }
 }
 
-void XmlDocument::readQuotedString (String& result)
+String XmlDocument::readQuotedString()
+{
+    // Collected in a stream: appending each piece to a String copies the whole value every time
+    MemoryOutputStream value;
+    readQuotedString (value);
+    return value.toUTF8();
+}
+
+void XmlDocument::readQuotedString (MemoryOutputStream& result)
 {
     auto quote = readNextChar();
 
     while (! outOfData)
     {
-        auto c = readNextChar();
+        auto c = *input;
 
         if (c == quote)
+        {
+            ++input;
             break;
-
-        --input;
+        }
 
         if (c == '&')
         {
             readEntity (result);
+            continue;
         }
-        else
+
+        if (c == 0)
         {
-            auto start = input;
-
-            for (;;)
-            {
-                auto character = *input;
-
-                if (character == quote)
-                {
-                    result.appendCharPointer (start, input);
-                    ++input;
-                    return;
-                }
-
-                if (character == '&')
-                {
-                    result.appendCharPointer (start, input);
-                    break;
-                }
-
-                if (character == 0)
-                {
-                    setLastError ("unmatched quotes", false);
-                    outOfData = true;
-                    break;
-                }
-
-                ++input;
-            }
+            setLastError ("unmatched quotes", false);
+            outOfData = true;
+            break;
         }
+
+        result.appendUTF8Char (c);
+        ++input;
     }
 }
 
@@ -474,7 +463,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
                         if (nextChar == '"' || nextChar == '\'')
                         {
                             auto* newAtt = new XmlElement::XmlAttributeNode (attNameStart, attNameEnd);
-                            readQuotedString (newAtt->attribute.value);
+                            newAtt->attribute.value = readQuotedString();
                             attributeAppender.append (newAtt);
                             continue;
                         }
@@ -605,8 +594,7 @@ void XmlDocument::readChildElements (XmlElement& parent)
 
                 if (c == '&')
                 {
-                    String entity;
-                    readEntity (entity);
+                    const auto entity = readEntity();
 
                     if (entity.startsWithChar ('<') && entity [1] != 0)
                     {
@@ -664,7 +652,14 @@ void XmlDocument::readChildElements (XmlElement& parent)
     }
 }
 
-void XmlDocument::readEntity (String& result)
+String XmlDocument::readEntity()
+{
+    MemoryOutputStream entity;
+    readEntity (entity);
+    return entity.toUTF8();
+}
+
+void XmlDocument::readEntity (MemoryOutputStream& result)
 {
     // skip over the ampersand
     ++input;
@@ -672,27 +667,27 @@ void XmlDocument::readEntity (String& result)
     if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("amp;"), 4) == 0)
     {
         input += 4;
-        result += '&';
+        result << '&';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("quot;"), 5) == 0)
     {
         input += 5;
-        result += '"';
+        result << '"';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("apos;"), 5) == 0)
     {
         input += 5;
-        result += '\'';
+        result << '\'';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("lt;"), 3) == 0)
     {
         input += 3;
-        result += '<';
+        result << '<';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("gt;"), 3) == 0)
     {
         input += 3;
-        result += '>';
+        result << '>';
     }
     else if (*input == '#')
     {
@@ -706,6 +701,12 @@ void XmlDocument::readEntity (String& result)
 
             while (input[0] != ';')
             {
+                if (input[0] == 0)
+                {
+                    setLastError ("unexpected end of input", true);
+                    return;
+                }
+
                 auto hexValue = CharacterFunctions::getHexDigitValue (input[0]);
 
                 if (hexValue < 0 || ++numChars > 8)
@@ -752,11 +753,15 @@ void XmlDocument::readEntity (String& result)
         else
         {
             setLastError ("illegal escape sequence", true);
-            result += '&';
+            result << '&';
             return;
         }
 
-        result << (juce_wchar) charCode;
+        // &#0; adds nothing: a 0 in the stream would end the value
+        if (charCode != 0)
+        {
+            result.appendUTF8Char ((juce_wchar) charCode);
+        }
     }
     else
     {
@@ -766,12 +771,12 @@ void XmlDocument::readEntity (String& result)
         if (closingSemiColon < 0)
         {
             outOfData = true;
-            result += '&';
+            result << '&';
         }
         else
         {
             input += closingSemiColon + 1;
-            result += expandExternalEntity (String (entityNameStart, (size_t) closingSemiColon));
+            result << expandExternalEntity (String (entityNameStart, (size_t) closingSemiColon));
         }
     }
 }
@@ -911,5 +916,165 @@ String XmlDocument::getParameterEntity (const String& entity)
 
     return entity;
 }
+
+//==============================================================================
+//==============================================================================
+#if JUCE_UNIT_TESTS
+
+class XmlDocumentTests final : public UnitTest
+{
+public:
+    XmlDocumentTests()
+        : UnitTest ("XmlDocument", UnitTestCategories::xml)
+    {}
+
+    void runTest() override
+    {
+        beginTest ("Attribute values");
+        {
+            expectValue ("<a v=\"plain\"/>", "plain");
+            expectValue ("<a v=\"\"/>", "");
+            expectValue ("<a v='single \"double\" inside'/>", "single \"double\" inside");
+            expectValue ("<a v=\"double 'single' inside\"/>", "double 'single' inside");
+
+            const auto utf8 = String::fromUTF8 ("\xc4\x93\xe6\x97\xa5\xf0\x9f\x98\x80");
+            expectValue ("<a v=\"" + utf8 + "\"/>", utf8);
+        }
+
+        beginTest ("Only the opening quote closes an attribute value");
+        {
+            expectValue ("<a v=\"&quot;&#34;&#x22;\"/>", "\"\"\"");
+            expectValue ("<a v='&apos;&#39;&#x27;'/>", "'''");
+
+            // left and right double quotes, fullwidth quotation mark, right single quote
+            const auto lookalikes = String::fromUTF8 ("\xe2\x80\x9c\xe2\x80\x9d\xef\xbc\x82\xe2\x80\x99");
+            expectValue ("<a v=\"" + lookalikes + "\"/>", lookalikes);
+            expectValue ("<a v='" + lookalikes + "'/>", lookalikes);
+
+            // nor does a lookalike open one
+            XmlDocument document ("<a v=" + lookalikes + "/>");
+            const auto element = document.getDocumentElement();
+            expect (element != nullptr && ! element->hasAttribute ("v"));
+        }
+
+        beginTest ("Entities in attribute values");
+        {
+            expectValue ("<a v=\"&amp;first\"/>", "&first");
+            expectValue ("<a v=\"last&amp;\"/>", "last&");
+            expectValue ("<a v=\"a&amp;b&lt;c\"/>", "a&b<c");
+            expectValue ("<a v=\"&amp;&amp;&amp;\"/>", "&&&");
+            expectValue ("<a v=\"&amp;&quot;&apos;&lt;&gt;\"/>", "&\"'<>");
+            expectValue ("<a v=\"&#65;&#x42;&#X43;&#x1F600;\"/>", "ABC" + String::charToString ((juce_wchar) 0x1f600));
+            expectValue ("<!DOCTYPE a [<!ENTITY e \"from the DTD\">]><a v=\"&e;\"/>", "from the DTD");
+        }
+
+        // The cases below are JUCE leniency, not XML 1.0: XML 1.0 makes each of them a fatal error,
+        // or reads it differently, as noted.
+        beginTest ("Lenient entities in attribute values");
+        {
+            // entity names are case-sensitive in XML 1.0
+            expectValue ("<a v=\"&AMP;&Quot;&APOS;&LT;&Gt;\"/>", "&\"'<>");
+
+            // &#0; is not an XML character
+            expectValue ("<a v=\"x&#0;y\"/>", "xy");
+
+            expectValue ("<a v=\"x&foo;y\"/>", "xfooy", "unknown entity");
+            expectValue ("<a v=\"&#xZZ;\"/>", "Z;", "illegal escape sequence");
+            expectValue ("<a v=\"&#x123456789;\"/>", String::charToString ((juce_wchar) 0x12345678) + ";", "illegal escape sequence");
+            expectValue ("<a v=\"&#;\"/>", "&;", "illegal escape sequence");
+            expectValue ("<a v=\"&#-1;\"/>", "&-1;", "illegal escape sequence");
+
+            // XML 1.0 reads this as 'A'; JUCE stops a decimal reference after 12 digits
+            expectValue ("<a v=\"&#0000000000065;\"/>", String::charToString ((juce_wchar) 6) + ";", "illegal escape sequence");
+
+            // no semicolon follows anywhere: the ampersand is kept and parsing stops without an error
+            expectValue ("<a v=\"x&\"/>", "x&");
+        }
+
+        beginTest ("Long attribute values");
+        {
+            expectValue ("<a v=\"" + String::repeatedString ("&quot;x", 20000) + "\"/>",
+                         String::repeatedString ("\"x", 20000));
+        }
+
+        beginTest ("Attribute values cut off by the end of the document");
+        {
+            expectNoElement ("<a v=\"abc", "unmatched quotes");
+            expectNoElement ("<a v=\"abc&amp;", "unmatched quotes");
+            expectNoElement ("<a v=\"", "unmatched quotes");
+            expectNoElement ("<a v=\"&#12", "unmatched quotes");
+            expectNoElement ("<a v=\"&#x41", "unmatched quotes");
+
+            // a NUL ends the text; what follows it stands for memory past the end
+            const char withNul[] = "<a v=\"&#x41\0\" w=\"past the end\"/>";
+            XmlDocument document ((String()));
+            document.setInputSource (new MemoryInputSource (MemoryBlock (withNul, sizeof (withNul) - 1)));
+            expect (document.getDocumentElement() == nullptr);
+            expectEquals (document.getLastParseError(), String ("unmatched quotes"));
+        }
+
+        beginTest ("Entities in element text");
+        {
+            expectText ("<a>x &amp; &lt;b&gt; &#65;</a>", "x & <b> A");
+            expectText ("<a>&lt;</a>", "<");
+            expectText ("<a>&#0;z</a>", "z"); // JUCE leniency: &#0; is not an XML character
+
+            XmlDocument document ("<!DOCTYPE a [<!ENTITY e \"<b/>\">]><a>&e;</a>");
+            const auto element = document.getDocumentElement();
+            expect (element != nullptr && element->getChildByName ("b") != nullptr);
+        }
+    }
+
+private:
+    struct MemoryInputSource final : public InputSource
+    {
+        explicit MemoryInputSource (MemoryBlock b) : block (std::move (b)) {}
+
+        InputStream* createInputStream() override                 { return new MemoryInputStream (block, false); }
+        InputStream* createInputStreamFor (const String&) override { return nullptr; }
+        int64 hashCode() const override                           { return 0; }
+
+        MemoryBlock block;
+    };
+
+    void expectValue (const String& text, const String& expectedValue, const String& expectedError = {})
+    {
+        XmlDocument document (text);
+        const auto element = document.getDocumentElement();
+
+        expect (element != nullptr, text);
+
+        if (element != nullptr)
+        {
+            expectEquals (element->getStringAttribute ("v"), expectedValue, text);
+        }
+
+        expectEquals (document.getLastParseError(), expectedError, text);
+    }
+
+    void expectText (const String& text, const String& expectedText)
+    {
+        XmlDocument document (text);
+        const auto element = document.getDocumentElement();
+
+        expect (element != nullptr, text);
+
+        if (element != nullptr)
+        {
+            expectEquals (element->getAllSubText(), expectedText, text);
+        }
+    }
+
+    void expectNoElement (const String& text, const String& expectedError)
+    {
+        XmlDocument document (text);
+        expect (document.getDocumentElement() == nullptr, text);
+        expectEquals (document.getLastParseError(), expectedError, text);
+    }
+};
+
+static XmlDocumentTests xmlDocumentTests;
+
+#endif
 
 }
