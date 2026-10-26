@@ -369,31 +369,23 @@ void XmlDocument::readQuotedString (String& result)
 
         if (c == '&')
         {
-            String entity;
-            readEntity (entity);
-            value << entity;
+            readEntity (value);
         }
         else
         {
-            auto start = input;
-
             for (;;)
             {
                 auto character = *input;
 
                 if (character == quote)
                 {
-                    value << String (start, input);
                     ++input;
                     result += value.toUTF8();
                     return;
                 }
 
                 if (character == '&')
-                {
-                    value << String (start, input);
                     break;
-                }
 
                 if (character == 0)
                 {
@@ -402,6 +394,7 @@ void XmlDocument::readQuotedString (String& result)
                     break;
                 }
 
+                value.appendUTF8Char (character);
                 ++input;
             }
         }
@@ -614,8 +607,9 @@ void XmlDocument::readChildElements (XmlElement& parent)
 
                 if (c == '&')
                 {
-                    String entity;
-                    readEntity (entity);
+                    MemoryOutputStream entityText;
+                    readEntity (entityText);
+                    const auto entity = entityText.toUTF8();
 
                     if (entity.startsWithChar ('<') && entity [1] != 0)
                     {
@@ -673,7 +667,7 @@ void XmlDocument::readChildElements (XmlElement& parent)
     }
 }
 
-void XmlDocument::readEntity (String& result)
+void XmlDocument::readEntity (OutputStream& result)
 {
     // skip over the ampersand
     ++input;
@@ -681,27 +675,27 @@ void XmlDocument::readEntity (String& result)
     if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("amp;"), 4) == 0)
     {
         input += 4;
-        result += '&';
+        result << '&';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("quot;"), 5) == 0)
     {
         input += 5;
-        result += '"';
+        result << '"';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("apos;"), 5) == 0)
     {
         input += 5;
-        result += '\'';
+        result << '\'';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("lt;"), 3) == 0)
     {
         input += 3;
-        result += '<';
+        result << '<';
     }
     else if (input.compareIgnoreCaseUpTo (CharPointer_ASCII ("gt;"), 3) == 0)
     {
         input += 3;
-        result += '>';
+        result << '>';
     }
     else if (*input == '#')
     {
@@ -761,11 +755,11 @@ void XmlDocument::readEntity (String& result)
         else
         {
             setLastError ("illegal escape sequence", true);
-            result += '&';
+            result << '&';
             return;
         }
 
-        result << (juce_wchar) charCode;
+        result << String::charToString ((juce_wchar) charCode);
     }
     else
     {
@@ -775,12 +769,12 @@ void XmlDocument::readEntity (String& result)
         if (closingSemiColon < 0)
         {
             outOfData = true;
-            result += '&';
+            result << '&';
         }
         else
         {
             input += closingSemiColon + 1;
-            result += expandExternalEntity (String (entityNameStart, (size_t) closingSemiColon));
+            result << expandExternalEntity (String (entityNameStart, (size_t) closingSemiColon));
         }
     }
 }
