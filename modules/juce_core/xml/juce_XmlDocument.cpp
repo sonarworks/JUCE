@@ -354,6 +354,10 @@ void XmlDocument::readQuotedString (String& result)
 {
     auto quote = readNextChar();
 
+    // Collected in a stream and added to the result once: appending each piece to the String
+    // copies the whole value every time, which makes long values quadratic to read
+    MemoryOutputStream value;
+
     while (! outOfData)
     {
         auto c = readNextChar();
@@ -365,7 +369,9 @@ void XmlDocument::readQuotedString (String& result)
 
         if (c == '&')
         {
-            readEntity (result);
+            String entity;
+            readEntity (entity);
+            value << entity;
         }
         else
         {
@@ -377,14 +383,15 @@ void XmlDocument::readQuotedString (String& result)
 
                 if (character == quote)
                 {
-                    result.appendCharPointer (start, input);
+                    value << String (start, input);
                     ++input;
+                    result += value.toUTF8();
                     return;
                 }
 
                 if (character == '&')
                 {
-                    result.appendCharPointer (start, input);
+                    value << String (start, input);
                     break;
                 }
 
@@ -399,6 +406,8 @@ void XmlDocument::readQuotedString (String& result)
             }
         }
     }
+
+    result += value.toUTF8();
 }
 
 XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
