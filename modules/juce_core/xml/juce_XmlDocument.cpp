@@ -352,10 +352,15 @@ void XmlDocument::skipNextWhiteSpace()
 
 String XmlDocument::readQuotedString()
 {
-    auto quote = readNextChar();
-
     // Collected in a stream: appending each piece to a String copies the whole value every time
     MemoryOutputStream value;
+    readQuotedString (value);
+    return value.toUTF8();
+}
+
+void XmlDocument::readQuotedString (MemoryOutputStream& result)
+{
+    auto quote = readNextChar();
 
     while (! outOfData)
     {
@@ -369,7 +374,7 @@ String XmlDocument::readQuotedString()
 
         if (c == '&')
         {
-            readEntity (value);
+            readEntity (result);
             continue;
         }
 
@@ -380,11 +385,9 @@ String XmlDocument::readQuotedString()
             break;
         }
 
-        value.appendUTF8Char (c);
+        result.appendUTF8Char (c);
         ++input;
     }
-
-    return value.toUTF8();
 }
 
 XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
@@ -591,9 +594,7 @@ void XmlDocument::readChildElements (XmlElement& parent)
 
                 if (c == '&')
                 {
-                    MemoryOutputStream entityText;
-                    readEntity (entityText);
-                    const auto entity = entityText.toUTF8();
+                    const auto entity = readEntity();
 
                     if (entity.startsWithChar ('<') && entity [1] != 0)
                     {
@@ -651,7 +652,14 @@ void XmlDocument::readChildElements (XmlElement& parent)
     }
 }
 
-void XmlDocument::readEntity (OutputStream& result)
+String XmlDocument::readEntity()
+{
+    MemoryOutputStream entity;
+    readEntity (entity);
+    return entity.toUTF8();
+}
+
+void XmlDocument::readEntity (MemoryOutputStream& result)
 {
     // skip over the ampersand
     ++input;
@@ -743,7 +751,9 @@ void XmlDocument::readEntity (OutputStream& result)
             return;
         }
 
-        result << String::charToString ((juce_wchar) charCode);
+        // &#0; adds nothing: a 0 in the stream would end the value
+        if (charCode != 0)
+            result.appendUTF8Char ((juce_wchar) charCode);
     }
     else
     {

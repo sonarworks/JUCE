@@ -176,7 +176,9 @@ private:
     XmlElement* readNextElement (bool alsoParseSubElements);
     void readChildElements (XmlElement&);
     String readQuotedString();
-    void readEntity (OutputStream&);
+    void readQuotedString (MemoryOutputStream&);
+    String readEntity();
+    void readEntity (MemoryOutputStream&);
 
     String getFileContents (const String&) const;
     String expandEntity (const String&);
