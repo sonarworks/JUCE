@@ -1417,6 +1417,11 @@ struct RenderContext
 
     /*  Gets a snapshot of whatever the render context is currently showing. */
     virtual Image createSnapshot() = 0;
+
+    /*  Returns the adapter whose Direct2D device draws the window, or nullptr if this renderer
+        doesn't draw with Direct2D.
+    */
+    virtual DxgiAdapter::Ptr getAdapter() const = 0;
 };
 
 //==============================================================================
@@ -1680,6 +1685,14 @@ public:
     TransparencyKind getTransparencyKind() const
     {
         return transparencyKind;
+    }
+
+    /*  Returns the adapter whose Direct2D device draws this window, or nullptr if the window isn't
+        drawn with Direct2D.
+    */
+    DxgiAdapter::Ptr getRenderAdapter() const
+    {
+        return renderContext != nullptr ? renderContext->getAdapter() : nullptr;
     }
 
     void setAlpha (float) override
@@ -4923,6 +4936,8 @@ public:
 
     void handleShowWindow() override {}
 
+    DxgiAdapter::Ptr getAdapter() const override { return {}; }
+
 private:
     // If we've called UpdateLayeredWindow to display the window contents, retrieving the
     // contents of the window DC will fail.
@@ -5229,6 +5244,11 @@ public:
         handleDirect2DPaint();
     }
 
+    DxgiAdapter::Ptr getAdapter() const override
+    {
+        return direct2DContext->getAdapter();
+    }
+
 private:
     void onSwapchainEvent() override
     {
@@ -5246,6 +5266,7 @@ private:
         virtual bool supportsTransparency() const = 0;
         virtual void updateAlpha() = 0;
         virtual Direct2DMetrics::Ptr getMetrics() const = 0;
+        virtual DxgiAdapter::Ptr getAdapter() const = 0;
     };
 
     /** This is a D2D context that uses a swap chain for presentation.
@@ -5310,6 +5331,11 @@ private:
         Direct2DMetrics::Ptr getMetrics() const override
         {
             return ctx.metrics;
+        }
+
+        DxgiAdapter::Ptr getAdapter() const override
+        {
+            return ctx.getAdapter();
         }
 
     private:
@@ -5400,6 +5426,15 @@ private:
             return {};
         }
 
+        /*  Returns the adapter of the last frame, or the one the next frame will use. */
+        DxgiAdapter::Ptr getAdapter (HWND hwnd) const
+        {
+            if (adapter != nullptr)
+                return adapter;
+
+            return directX->adapters.getAdapterForHwnd (hwnd);
+        }
+
     private:
         static constexpr bool equal (D2D1_SIZE_U a, D2D1_SIZE_U b)
         {
@@ -5481,6 +5516,11 @@ private:
         Direct2DMetrics::Ptr getMetrics() const override
         {
             return bitmapRenderer.getMetrics();
+        }
+
+        DxgiAdapter::Ptr getAdapter() const override
+        {
+            return bitmapRenderer.getAdapter (peer.getHWND());
         }
 
     private:

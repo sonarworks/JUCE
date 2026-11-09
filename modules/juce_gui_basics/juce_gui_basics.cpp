@@ -221,6 +221,8 @@
  #include "native/juce_WindowUtils_windows.cpp"
  #include "native/juce_VBlank_windows.cpp"
  #include "native/juce_Windowing_windows.cpp"
+ #include "native/juce_Direct2DDeviceAttachment_windows.h"
+ #include "native/juce_Direct2DDeviceAttachment_windows.cpp"
  #include "native/juce_WindowsHooks_windows.cpp"
  #include "native/juce_NativeMessageBox_windows.cpp"
  #include "native/juce_DragAndDrop_windows.cpp"

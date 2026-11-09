@@ -53,6 +53,11 @@ public:
 
     Image createSnapshot() const override;
 
+    /*  Returns the adapter whose device draws this window. Before the first frame, and after the device
+        has been released, returns the default adapter, which the next frame will use.
+    */
+    DxgiAdapter::Ptr getAdapter() const;
+
 private:
     struct HwndPimpl;
     std::unique_ptr<HwndPimpl> pimpl;

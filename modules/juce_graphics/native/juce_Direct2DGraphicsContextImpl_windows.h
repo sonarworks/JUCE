@@ -69,6 +69,17 @@ public:
         return directX->adapters.getDefaultAdapter();
     }
 
+    /*  Returns the adapter of the device this context draws with, or the default adapter while the context
+        has no device.
+    */
+    DxgiAdapter::Ptr getAdapter() const
+    {
+        if (auto adapter = findAdapter())
+            return adapter;
+
+        return getDefaultAdapter();
+    }
+
     auto getDirect2DFactory() const
     {
         return directX->getD2DFactory();

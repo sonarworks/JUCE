@@ -726,6 +726,11 @@ Image Direct2DHwndContext::createSnapshot() const
     return pimpl->createSnapshot();
 }
 
+DxgiAdapter::Ptr Direct2DHwndContext::getAdapter() const
+{
+    return pimpl->getAdapter();
+}
+
 void Direct2DHwndContext::clearTargetBuffer()
 {
     applyPendingClipList();
