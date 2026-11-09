@@ -456,6 +456,10 @@ struct VideoComponent::Pimpl : public AndroidViewComponent,
     void setVolume (float newVolume)      { mediaSession.setVolume (newVolume); }
     float getVolume() const               { return mediaSession.getVolume(); }
 
+    // Selecting the audio output device isn't implemented on this platform, so we only store the identifier.
+    void setAudioOutputDevice (const String& deviceID)  { audioOutputDeviceID = deviceID; }
+    String getAudioOutputDevice() const                 { return audioOutputDeviceID; }
+
     File currentFile;
     URL currentURL;
 
@@ -1777,6 +1781,8 @@ private:
 
     //==============================================================================
    #endif
+
+    String audioOutputDeviceID;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Pimpl)
 };

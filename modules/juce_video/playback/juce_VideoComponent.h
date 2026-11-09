@@ -96,8 +96,11 @@ public:
         callback supplied to the function on the message thread.
 
         This is the preferred way of loading content, since it works not only on
-        macOS and Windows, but also on iOS and Android. On Windows, it will internally
-        call load().
+        macOS and Windows, but also on iOS and Android.
+
+        On Windows the callback is called at most once, with a failed Result if
+        closeVideo() or another load interrupts this load, unless the component is
+        deleted first.
 
         @see load
      */
@@ -162,6 +165,23 @@ public:
     */
     float getAudioVolume() const;
 
+    /** Selects the audio output device that the video's sound is played on, or the
+        system's default output device for an empty string. On Windows the identifier is
+        the WASAPI endpoint ID, as returned by AudioIODeviceType::DeviceInfo::id.
+
+        An open video is reopened on the new device at its position and play state. On a
+        version of Windows that can't select the device, loading fails when the identifier
+        is set. Other platforms only store the identifier.
+
+        @see getAudioOutputDevice
+    */
+    void setAudioOutputDevice (const String& deviceID);
+
+    /** Returns the identifier passed to setAudioOutputDevice(). An empty string means
+        the system's default output device.
+    */
+    String getAudioOutputDevice() const;
+
    #if JUCE_SYNC_VIDEO_VOLUME_WITH_OS_MEDIA_VOLUME
     /** Set this callback to be notified whenever OS global media volume changes.
         Currently used on Android only.
@@ -176,7 +196,12 @@ public:
     std::function<void()> onPlaybackStopped;
 
     /** Set this callback to be notified whenever an error occurs. Upon error, you
-        may need to load the video again. */
+        may need to load the video again.
+
+        On Windows the video is already closed when this is called. It isn't called for an
+        error that load() or the loadAsync() callback already reports, nor for an error that
+        a later closeVideo() or load overtakes.
+    */
     std::function<void (const String& /*error*/)> onErrorOccurred;
 
     /** Set this callback to be notified whenever an video has reached an end. */

@@ -54,28 +54,56 @@
 
 //==============================================================================
 #elif JUCE_WINDOWS
- #include "dshow.h"
- #include "dshowasf.h"
- #include "evr.h"
- #include "strmif.h"
- #include "wmsdk.h"
+ #include <d2d1_3.h>
+ #include <d3d11_4.h>
+ #include <dcomp.h>
+ #include <dwrite_3.h>
+ #include <dxgi1_6.h>
+ #include <mfapi.h>
+ #include <mferror.h>
+ #include <mfmediaengine.h>
+ #include <mfreadwrite.h>
+
+ #if JUCE_USE_CAMERA
+  #include "dshow.h"
+  #include "dshowasf.h"
+  #include "strmif.h"
+  #include "wmsdk.h"
+ #endif
 
  #if ! JUCE_DONT_AUTOLINK_TO_WIN32_LIBRARIES
-  #pragma comment (lib, "strmiids.lib")
+  #pragma comment (lib, "d3d11.lib")
+  #pragma comment (lib, "mfplat.lib")
+  #pragma comment (lib, "mfreadwrite.lib")
+  #pragma comment (lib, "mfuuid.lib")
 
   #if JUCE_USE_CAMERA
    #pragma comment (lib, "Strmiids.lib")
    #pragma comment (lib, "wmvcore.lib")
   #endif
-
-  #if JUCE_MEDIAFOUNDATION
-   #pragma comment (lib, "mfuuid.lib")
-  #endif
  #endif
+
+ #include <juce_graphics/fonts/juce_FunctionPointerDestructor.h>
+ #include <juce_graphics/native/juce_Direct2DMetrics_windows.h>
+ #include <juce_graphics/native/juce_Direct2DGraphicsContext_windows.h>
+ #include <juce_graphics/native/juce_DirectX_windows.h>
+ #include <juce_graphics/native/juce_Direct2DPixelDataPage_windows.h>
+ #include <juce_graphics/images/juce_ImagePixelDataNativeExtensions.h>
+ #include <juce_graphics/native/juce_Direct2DExternalImage_windows.h>
+ #include <juce_gui_basics/native/juce_Direct2DDeviceAttachment_windows.h>
+
+ #include "native/juce_MediaFoundation_windows.h"
+ #include "native/juce_VideoFrameSync_windows.h"
+ #include "native/juce_VideoFramePresenter_windows.h"
 #endif
 
 //==============================================================================
 #include "playback/juce_VideoComponent.cpp"
+
+#if JUCE_WINDOWS
+ #include "native/juce_MediaFoundation_windows.cpp"
+ #include "native/juce_VideoFrameSync_windows.cpp"
+#endif
 
 #if JUCE_USE_CAMERA
  #include "capture/juce_CameraDevice.cpp"

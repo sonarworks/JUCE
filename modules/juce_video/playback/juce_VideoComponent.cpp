@@ -75,7 +75,7 @@ void VideoComponent::loadAsync (const URL& url, std::function<void (const URL&, 
         return;
     }
 
-   #if JUCE_ANDROID || JUCE_IOS || JUCE_MAC
+   #if JUCE_ANDROID || JUCE_IOS || JUCE_MAC || JUCE_WINDOWS
     pimpl->loadAsync (url, callback);
    #else
     auto result = loadInternal (url, true);
@@ -114,6 +114,9 @@ double VideoComponent::getPlaySpeed() const                 { return pimpl->getS
 
 void VideoComponent::setAudioVolume (float newVolume)       { pimpl->setVolume (newVolume); }
 float VideoComponent::getAudioVolume() const                { return pimpl->getVolume(); }
+
+void VideoComponent::setAudioOutputDevice (const String& deviceID)  { pimpl->setAudioOutputDevice (deviceID); }
+String VideoComponent::getAudioOutputDevice() const                 { return pimpl->getAudioOutputDevice(); }
 
 void VideoComponent::resized()
 {

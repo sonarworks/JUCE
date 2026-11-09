@@ -193,6 +193,10 @@ struct VideoComponent::Pimpl   : public Base
         return 0.0f;
     }
 
+    // Selecting the audio output device isn't implemented on this platform, so we only store the identifier.
+    void setAudioOutputDevice (const String& deviceID)  { audioOutputDeviceID = deviceID; }
+    String getAudioOutputDevice() const                 { return audioOutputDeviceID; }
+
     File currentFile;
     URL currentURL;
 
@@ -842,6 +846,8 @@ private:
         NullCheckedInvocation::invoke (owner.onEndReached);
         //setPosition (0.0);
     }
+
+    String audioOutputDeviceID;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Pimpl)
 };

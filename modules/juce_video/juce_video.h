@@ -54,6 +54,7 @@
   dependencies:       juce_gui_extra
   OSXFrameworks:      AVKit AVFoundation CoreMedia
   iOSFrameworks:      AVKit AVFoundation CoreMedia
+  windowsLibs:        d3d11 mfplat mfreadwrite mfuuid
 
  END_JUCE_MODULE_DECLARATION
 
