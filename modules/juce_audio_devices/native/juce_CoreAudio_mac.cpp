@@ -2228,6 +2228,9 @@ public:
         pa.mElement = kAudioObjectPropertyElementWildcard;
 
         AudioObjectAddPropertyListener (kAudioObjectSystemObject, &pa, hardwareListenerProc, this);
+
+        for (const auto& address : defaultDeviceAddresses)
+            AudioObjectAddPropertyListener (kAudioObjectSystemObject, &address, hardwareListenerProc, this);
     }
 
     ~CoreAudioIODeviceType() override
@@ -2240,6 +2243,12 @@ public:
         pa.mElement = kAudioObjectPropertyElementWildcard;
 
         AudioObjectRemovePropertyListener (kAudioObjectSystemObject, &pa, hardwareListenerProc, this);
+
+        for (const auto& address : defaultDeviceAddresses)
+            AudioObjectRemovePropertyListener (kAudioObjectSystemObject, &address, hardwareListenerProc, this);
+
+        for (const auto device : watchedDevices)
+            unwatchDevice (device);
     }
 
     //==============================================================================
@@ -2251,6 +2260,10 @@ public:
         outputDeviceNames.clear();
         inputIds.clear();
         outputIds.clear();
+        inputUids.clear();
+        outputUids.clear();
+        inputChannelCounts.clear();
+        outputChannelCounts.clear();
 
         auto audioDevices = audioObjectGetProperties<AudioDeviceID> (kAudioObjectSystemObject, { kAudioHardwarePropertyDevices,
                                                                                                  kAudioObjectPropertyScopeWildcard,
@@ -2266,16 +2279,25 @@ public:
                 {
                     const auto nameString = String::fromCFString (name.get());
 
+                    // The UID is stable across reboots; the numeric id is a last resort for a device without one
+                    auto uid = getDeviceUid (audioDevice);
+                    if (uid.isEmpty())
+                        uid = String (static_cast<uint32> (audioDevice));
+
                     if (const auto numIns  = getNumChannels (audioDevice, true); numIns > 0)
                     {
                         inputDeviceNames.add (nameString);
                         inputIds.add (audioDevice);
+                        inputUids.add (uid);
+                        inputChannelCounts.add (static_cast<unsigned short> (numIns));
                     }
 
                     if (const auto numOuts = getNumChannels (audioDevice, false); numOuts > 0)
                     {
                         outputDeviceNames.add (nameString);
                         outputIds.add (audioDevice);
+                        outputUids.add (uid);
+                        outputChannelCounts.add (static_cast<unsigned short> (numOuts));
                     }
                 }
             }
@@ -2283,6 +2305,17 @@ public:
 
         inputDeviceNames.appendNumbersToDuplicates (false, true);
         outputDeviceNames.appendNumbersToDuplicates (false, true);
+
+        // A rename or a new channel layout is reported by the device itself, not by the system object
+        for (const auto device : watchedDevices)
+            if (std::find (audioDevices.begin(), audioDevices.end(), device) == audioDevices.end())
+                unwatchDevice (device);
+
+        for (const auto device : audioDevices)
+            if (std::find (watchedDevices.begin(), watchedDevices.end(), device) == watchedDevices.end())
+                watchDevice (device);
+
+        watchedDevices = audioDevices;
     }
 
     StringArray getDeviceNames (bool wantInputNames) const override
@@ -2303,6 +2336,8 @@ public:
             : outputIds;
         auto& channelCounts = wantInputNames ? inputChannelCounts
             : outputChannelCounts;
+        auto& uids = wantInputNames ? inputUids
+            : outputUids;
 
         jassert((names.size() == ids.size()) || (names.size() == channelCounts.size()));
         if ((names.size() != ids.size()) || (names.size() != channelCounts.size()))
@@ -2313,9 +2348,11 @@ public:
         juce::Array<AudioIODeviceType::DeviceInfo> items;
         items.ensureStorageAllocated(names.size());
 
+        // The id is the device UID, the id SonarworksAudio uses for a CoreAudio device. A device with inputs and
+        // outputs is one HAL object, so it has the same id in both lists.
         for (auto i = 0; i < names.size(); ++i)
         {
-            items.add({ names[i], juce::String(static_cast<juce::uint32>(ids[i])), channelCounts[i] });
+            items.add({ names[i], uids[i], channelCounts[i] });
         }
 
         return items;
@@ -2347,10 +2384,15 @@ public:
         return 0;
     }
 
-    String getDefaultDeviceIdByRole (bool /*forInput*/, DefaultDeviceRole /*role*/) const override
+    // macOS has one default device per direction and no roles, so every role answers with that device
+    String getDefaultDeviceIdByRole (bool forInput, DefaultDeviceRole role) const override
     {
         jassert (hasScanned); // need to call scanForDevices() before doing this
-        return {};
+
+        if (role == DefaultDeviceRole::Invalid)
+            return {};
+
+        return getDefaultDeviceUid (forInput);
     }
 
     int getIndexOfDevice (AudioIODevice* device, bool asInput) const override
@@ -2411,15 +2453,91 @@ public:
 
     //==============================================================================
 private:
+    static constexpr AudioObjectPropertyAddress defaultDeviceAddresses[]
+    {
+        { kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, juceAudioObjectPropertyElementMain },
+        { kAudioHardwarePropertyDefaultInputDevice,  kAudioObjectPropertyScopeGlobal, juceAudioObjectPropertyElementMain },
+    };
+
+    static constexpr AudioObjectPropertyAddress watchedDeviceAddresses[]
+    {
+        { kAudioObjectPropertyName,                kAudioObjectPropertyScopeWildcard, kAudioObjectPropertyElementWildcard },
+        { kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeWildcard, kAudioObjectPropertyElementWildcard },
+    };
+
     StringArray inputDeviceNames, outputDeviceNames;
     Array<AudioDeviceID> inputIds, outputIds;
     Array<unsigned short> inputChannelCounts, outputChannelCounts;
+    StringArray inputUids, outputUids;
+    std::vector<AudioDeviceID> watchedDevices;
+    String defaultInputUid = getDefaultDeviceUid (true), defaultOutputUid = getDefaultDeviceUid (false);
 
     bool hasScanned = false;
 
     void handleAsyncUpdate() override
     {
         audioDeviceListChanged();
+        notifyDefaultDeviceChanges();
+    }
+
+    // One macOS default stands for every Windows role, so a change is reported for each of them, as Windows reports
+    // a device made the default for every role
+    void notifyDefaultDeviceChanges()
+    {
+        for (const auto forInput : { false, true })
+        {
+            auto& lastUid = forInput ? defaultInputUid : defaultOutputUid;
+            const auto uid = getDefaultDeviceUid (forInput);
+
+            if (uid == lastUid)
+                continue;
+
+            lastUid = uid;
+
+            for (const auto role : { DefaultDeviceRole::Console, DefaultDeviceRole::Multimedia, DefaultDeviceRole::Communications })
+                callDefaultDeviceChangeListeners (uid, role);
+        }
+    }
+
+    void watchDevice (AudioDeviceID device)
+    {
+        for (const auto& address : watchedDeviceAddresses)
+            AudioObjectAddPropertyListener (device, &address, hardwareListenerProc, this);
+    }
+
+    void unwatchDevice (AudioDeviceID device)
+    {
+        // Fails harmlessly for a device that has already gone
+        for (const auto& address : watchedDeviceAddresses)
+            AudioObjectRemovePropertyListener (device, &address, hardwareListenerProc, this);
+    }
+
+    static String getDeviceUid (AudioDeviceID deviceID)
+    {
+        if (const auto uid = audioObjectGetProperty<CFStringRef> (deviceID, { kAudioDevicePropertyDeviceUID,
+                                                                              kAudioObjectPropertyScopeGlobal,
+                                                                              juceAudioObjectPropertyElementMain }))
+        {
+            if (const CFUniquePtr<CFStringRef> ownedUid { *uid })
+                return String::fromCFString (ownedUid.get());
+        }
+
+        return {};
+    }
+
+    static String getDefaultDeviceUid (bool forInput)
+    {
+        const auto selector = forInput ? kAudioHardwarePropertyDefaultInputDevice
+                                       : kAudioHardwarePropertyDefaultOutputDevice;
+
+        if (const auto deviceID = audioObjectGetProperty<AudioDeviceID> (kAudioObjectSystemObject, { selector,
+                                                                                                    kAudioObjectPropertyScopeGlobal,
+                                                                                                    juceAudioObjectPropertyElementMain }))
+        {
+            return getDeviceUid (*deviceID);
+        }
+
+        return {};
     }
 
     static int getNumChannels (AudioDeviceID deviceID, bool input)
